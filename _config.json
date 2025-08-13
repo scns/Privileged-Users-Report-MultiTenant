@@ -1,0 +1,7 @@
+{
+    "exportRetentionCount": 40,
+    "cleanupOldExports": true,
+    "exportDirectory": "exports",
+    "archiveDirectory": "archive",
+    "autoOpenHtmlReport": true
+}

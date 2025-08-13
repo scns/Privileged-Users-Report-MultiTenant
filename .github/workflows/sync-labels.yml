@@ -1,0 +1,29 @@
+---
+name: Sync labels
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/labels.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  labels:
+    name: ♻️ Sync labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⤵️ Check out code from GitHub
+        uses: actions/checkout@v4.2.2
+      - name: 🚀 Run Label Syncer
+        uses: EndBug/label-sync@v2
+        with:
+          config-file: .github/labels.yml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          delete-other-labels: false

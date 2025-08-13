@@ -1,0 +1,31 @@
+---
+name: Auto Assign
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+  issues:
+    types: [opened, reopened]
+
+jobs:
+  auto-assign:
+    name: 🔄 Auto assign PR/Issue
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    steps:
+      - name: 👤 Auto assign PR reviewer and assignee
+        if: github.event_name == 'pull_request'
+        uses: hkusu/review-assign-action@v1.3.0
+        with:
+          assignees: scns
+          reviewers: scns
+          
+      - name: 👤 Auto assign Issue
+        if: github.event_name == 'issues'
+        uses: pozil/auto-assign-issue@v1.11.0
+        with:
+          assignees: scns
+          numOfAssignee: 1

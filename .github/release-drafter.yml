@@ -1,0 +1,112 @@
+name-template: 'Release v$RESOLVED_VERSION'
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- #$NUMBER $TITLE @$AUTHOR"
+sort-direction: ascending
+
+autolabeler:
+  - label: 'documentation'
+    files:
+      - '*.md'
+      - 'docs/**/*'
+  - label: 'dependencies'
+    files:
+      - '.github/dependabot.yml'
+      - '.github/workflows/*'
+  - label: 'ci'
+    files:
+      - '.github/workflows/*'
+      - '.github/release-drafter.yml'
+  - label: 'enhancement'
+    title:
+      - '/enhance/i'
+      - '/improve/i'
+      - '/add/i'
+  - label: 'bugfix'
+    title:
+      - '/fix/i'
+      - '/bug/i'
+      - '/resolve/i'
+  - label: 'new-feature'
+    title:
+      - '/feature/i'
+      - '/new/i'
+
+categories:
+  - title: "🚨 Major Release 🚨"
+    labels:
+      - "major-change"
+  - title: "🚨 Breaking changes"
+    labels:
+      - "breaking-change"
+  - title: "✨ New features"
+    labels:
+      - "new-feature"
+  - title: "🐛 Bug fixes"
+    labels:
+      - "bugfix"
+  - title: "🚀 Enhancements"
+    labels:
+      - "enhancement"
+      - "refactor"
+      - "performance"
+  - title: "🧰 Maintenance"
+    labels:
+      - "maintenance"
+      - "ci"
+  - title: "📚 Documentation"
+    labels:
+      - "documentation"
+  - title: "⬆️ Dependency updates"
+    collapse-after: 5
+    labels:
+      - "dependencies"
+  - title: "🚨🚨 Security Fixes 🚨🚨"
+    labels:
+      - "security"
+
+exclude-labels:
+  - "sync"
+  - "skip-changelog"
+
+version-resolver:
+  major:
+    labels:
+      - "major-change"
+      - "breaking-change"
+      - "type: major"
+  minor:
+    labels:
+      - "minor"
+      - "new-feature"
+      - "type: minor"
+      - "enhancement"
+  patch:
+    labels:
+      - "bugfix"
+      - "chore"
+      - "ci"
+      - "dependencies"
+      - "documentation"
+      - "performance"
+      - "refactor"
+      - "security"
+      - "type: patch"
+      - "maintenance"
+  default: patch
+
+no-changes-template: '- No changes'
+
+template: |
+  ## What's Changed
+
+  $CHANGES
+
+  **Full Changelog**: https://github.com/scns/Windows-Update-Report-MultiTenant/compare/$PREVIOUS_TAG...$RESOLVED_VERSION
+
+  _To receive a notification on new releases, click on **Watch** > **Custom** > **Releases** on the top._
+
+  _Be sure to 🌟 this repository for updates! It's a hobby project. Check it out at the link https://scns.github.io/Windows-Update-Report-MultiTenant/._
+
+  ## Contributors
+
+  $CONTRIBUTORS

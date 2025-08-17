@@ -163,6 +163,26 @@ Pas rapportage-instellingen aan:
 
 - `-ConfigFile`: Pad naar configuratiebestand (standaard: config.json)
 - `-OutputPath`: Output directory (overschrijft config.json)
+- `-ReportOnly`: Genereer alleen HTML rapport uit bestaande exports zonder nieuwe data op te halen
+
+### Gebruik voorbeelden
+
+```powershell
+# Normale uitvoering - haalt nieuwe data op en genereert rapporten
+.\Get-PIMUsers.ps1
+
+# Met aangepaste configuratie
+.\Get-PIMUsers.ps1 -ConfigFile "custom-config.json"
+
+# Met aangepast output pad
+.\Get-PIMUsers.ps1 -OutputPath "C:\Reports"
+
+# Alleen HTML rapport genereren uit bestaande data
+.\Get-PIMUsers.ps1 -ReportOnly
+
+# Combinatie van parameters
+.\Get-PIMUsers.ps1 -ConfigFile "custom-config.json" -ReportOnly
+```
 
 ## 📁 Output Bestanden
 
@@ -225,7 +245,32 @@ Alle bestanden gebruiken het format: `YYYYMMDD_Customer_ReportType.csv`
 - **Global Admins < 5 per tenant** als guideline
 - **Regelmatige access reviews** voor compliance
 
-## 🔧 Troubleshooting
+## � ReportOnly Mode
+
+### Wanneer gebruiken?
+
+De `-ReportOnly` parameter is handig in deze situaties:
+
+- **Snel HTML dashboard regenereren** - Zonder wachten op API calls
+- **Verschillende visualisaties** - Experimenteren met configuratie wijzigingen
+- **Demo doeleinden** - Presenteren van bestaande data
+- **Troubleshooting HTML** - Testen van dashboard wijzigingen
+- **Offline analyse** - Werken met eerder opgehaalde data
+
+### Voordelen
+
+- ⚡ **Snelheid** - Geen API authenticatie of netwerkverkeer nodig
+- 🔄 **Vergelijking** - Automatische detectie van wijzigingen tussen exports
+- 💾 **Efficiëntie** - Hergebruik van bestaande data
+- 🎨 **Flexibiliteit** - Makkelijk experimenteren met rapportage
+
+### ReportOnly Vereisten
+
+- Minimaal één bestaande export (via normale uitvoering)
+- `*_All_Customers_Full_Report.csv` bestand in export directory
+- Geldige `config.json` voor HTML instellingen
+
+## �🔧 Troubleshooting
 
 ### Veelvoorkomende Problemen
 

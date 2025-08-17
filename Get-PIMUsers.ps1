@@ -16,11 +16,17 @@
 .PARAMETER OutputPath  
     Pad waar de export bestanden worden opgeslagen (overschrijft config.json instelling)
     
+.PARAMETER ReportOnly
+    Genereer alleen HTML rapport uit bestaande exports zonder nieuwe data op te halen
+    
 .EXAMPLE
     .\Get-PIMUsers.ps1
     
 .EXAMPLE
     .\Get-PIMUsers.ps1 -ConfigFile "custom-config.json" -OutputPath "C:\Exports"
+    
+.EXAMPLE
+    .\Get-PIMUsers.ps1 -ReportOnly
     
 .AUTEUR
     PowerShell Script voor PIM & Permanent Role Rapportage
@@ -31,7 +37,8 @@
 
 param(
     [string]$ConfigFile = "config.json",
-    [string]$OutputPath = ""
+    [string]$OutputPath = "",
+    [switch]$ReportOnly
 )
 
 # Versie informatie
@@ -547,6 +554,7 @@ function Get-PIMRoleAssignments {
 }
 
 # Functie om permanente (non-PIM) rol assignments op te halen
+# Functie om permanente (non-PIM) rol assignments op te halen
 function Get-PermanentRoleAssignments {
     param(
         [string]$TenantId,
@@ -558,114 +566,109 @@ function Get-PermanentRoleAssignments {
     try {
         Write-Host "Ophalen van permanente (non-PIM) rol-toewijzingen voor $CustomerName..." -ForegroundColor Yellow
         
-        # Haal alle directory roles op
-        Write-Host "  - Ophalen van directory rollen..." -ForegroundColor Cyan
+        # Method 1: Haal klassieke directory role assignments op
+        Write-Host "  - Ophalen van klassieke directory role assignments..." -ForegroundColor Cyan
         try {
-            $directoryRoles = Get-MgDirectoryRole -All -ErrorAction SilentlyContinue
+            $directoryRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -All -ErrorAction SilentlyContinue
+            Write-Host "    - Gevonden $($directoryRoleAssignments.Count) directory role assignments" -ForegroundColor DarkCyan
             
-            foreach ($role in $directoryRoles) {
-                Write-Host "    - Controleren rol: $($role.DisplayName)" -ForegroundColor DarkCyan
-                
-                # Haal leden van deze rol op
+            foreach ($assignment in $directoryRoleAssignments) {
                 try {
-                    $roleMembers = Get-MgDirectoryRoleMember -DirectoryRoleId $role.Id -All -ErrorAction SilentlyContinue
+                    # Haal rol informatie op
+                    $roleDefinition = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId -ErrorAction SilentlyContinue
+                    if (-not $roleDefinition) { continue }
                     
-                    foreach ($member in $roleMembers) {
-                        try {
-                            # Bepaal of dit een PIM-managed rol is
-                            $isPIMManaged = $false
-                            try {
-                                $pimEligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "principalId eq '$($member.Id)' and roleDefinitionId eq '$($role.RoleTemplateId)'" -ErrorAction SilentlyContinue
-                                $pimActive = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -Filter "principalId eq '$($member.Id)' and roleDefinitionId eq '$($role.RoleTemplateId)'" -ErrorAction SilentlyContinue
-                                
-                                if ($pimEligible -or $pimActive) {
-                                    $isPIMManaged = $true
-                                }
-                            }
-                            catch {
-                                $isPIMManaged = $false
-                            }
-                            
-                            # Alleen verwerken als het NIET PIM-managed is
-                            if (-not $isPIMManaged) {
-                                # Haal gebruiker/principal informatie op
-                                $principalInfo = Get-PrincipalInfo -PrincipalId $member.Id
-                                
-                                $permanentInfo = [PSCustomObject]@{
-                                    Customer = $CustomerName
+                    # Check of dit assignment NIET via PIM loopt
+                    $isPIMManaged = $false
+                    try {
+                        $pimEligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "principalId eq '$($assignment.PrincipalId)' and roleDefinitionId eq '$($assignment.RoleDefinitionId)'" -ErrorAction SilentlyContinue
+                        $pimActive = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -Filter "principalId eq '$($assignment.PrincipalId)' and roleDefinitionId eq '$($assignment.RoleDefinitionId)'" -ErrorAction SilentlyContinue
+                        
+                        if (($pimEligible | Measure-Object).Count -gt 0 -or ($pimActive | Measure-Object).Count -gt 0) {
+                            $isPIMManaged = $true
+                        }
+                    }
+                    catch {
+                        $isPIMManaged = $false
+                    }
+                    
+                    # Alleen verwerken als het NIET PIM-managed is
+                    if (-not $isPIMManaged) {
+                        Write-Host "      - Permanente rol gevonden: $($roleDefinition.DisplayName) voor principal $($assignment.PrincipalId)" -ForegroundColor Green
+                        
+                        # Haal gebruiker/principal informatie op
+                        $principalInfo = Get-PrincipalInfo -PrincipalId $assignment.PrincipalId
+                        
+                        $permanentInfo = [PSCustomObject]@{
+                            Customer = $CustomerName
+                            TenantId = $TenantId
+                            UserPrincipalName = $principalInfo.UserPrincipalName
+                            DisplayName = $principalInfo.DisplayName
+                            PrincipalId = $assignment.PrincipalId
+                            EmailAddress = $principalInfo.Email
+                            UserType = $principalInfo.UserType
+                            RoleName = $roleDefinition.DisplayName
+                            RoleId = $roleDefinition.Id
+                            RoleTemplateId = $roleDefinition.TemplateId
+                            AssignmentType = "Permanent"
+                            Status = "Active"
+                            CreatedDateTime = $principalInfo.CreatedDateTime
+                            StartDateTime = "N/A"
+                            EndDateTime = "Never"
+                            DirectoryScope = $assignment.DirectoryScopeId
+                            AssignmentId = $assignment.Id
+                            AccountEnabled = $principalInfo.AccountEnabled
+                            Department = $principalInfo.Department
+                            JobTitle = $principalInfo.JobTitle
+                            CompanyName = $principalInfo.CompanyName
+                            IsPIMManaged = $false
+                            ViaGroup = "N/A"
+                            IsGroupMember = $false
+                        }
+                        $allPermanentAssignments += $permanentInfo
+                        
+                        # Als dit een groep is, haal dan ook de leden op
+                        if ($principalInfo.UserType -eq "Group") {
+                            $groupMembers = Get-GroupMembers -GroupId $assignment.PrincipalId -Customer $CustomerName -GroupName $principalInfo.DisplayName -RoleName $roleDefinition.DisplayName -AssignmentType "Permanent" -AssignmentState "Active" -StartDateTime ([DateTime]::MinValue) -EndDateTime ([DateTime]::MaxValue)
+                            foreach ($groupMember in $groupMembers) {
+                                $memberPermanentInfo = [PSCustomObject]@{
+                                    Customer = $groupMember.Customer
                                     TenantId = $TenantId
-                                    UserPrincipalName = $principalInfo.UserPrincipalName
-                                    DisplayName = $principalInfo.DisplayName
-                                    PrincipalId = $member.Id
-                                    EmailAddress = $principalInfo.Email
-                                    UserType = $principalInfo.UserType
-                                    RoleName = $role.DisplayName
-                                    RoleId = $role.Id
-                                    RoleTemplateId = $role.RoleTemplateId
-                                    AssignmentType = "Permanent"
+                                    UserPrincipalName = $groupMember.UserPrincipalName
+                                    DisplayName = $groupMember.DisplayName
+                                    PrincipalId = $groupMember.PrincipalId
+                                    EmailAddress = $groupMember.Email
+                                    UserType = $groupMember.UserType
+                                    RoleName = $groupMember.RoleName
+                                    RoleId = $roleDefinition.Id
+                                    RoleTemplateId = $roleDefinition.TemplateId
+                                    AssignmentType = $groupMember.AssignmentType
                                     Status = "Active"
-                                    CreatedDateTime = $principalInfo.CreatedDateTime
+                                    CreatedDateTime = $groupMember.CreatedDateTime
                                     StartDateTime = "N/A"
                                     EndDateTime = "Never"
-                                    DirectoryScope = "/"
-                                    AssignmentId = "Permanent_$($role.Id)_$($member.Id)"
-                                    AccountEnabled = $principalInfo.AccountEnabled
-                                    Department = $principalInfo.Department
-                                    JobTitle = $principalInfo.JobTitle
-                                    CompanyName = $principalInfo.CompanyName
+                                    DirectoryScope = $assignment.DirectoryScopeId
+                                    AssignmentId = $assignment.Id + "_member_" + $groupMember.PrincipalId
+                                    AccountEnabled = $groupMember.AccountEnabled
+                                    Department = $groupMember.Department
+                                    JobTitle = $groupMember.JobTitle
+                                    CompanyName = $groupMember.CompanyName
                                     IsPIMManaged = $false
-                                    ViaGroup = "N/A"
-                                    IsGroupMember = $false
+                                    ViaGroup = $groupMember.ViaGroup
+                                    IsGroupMember = $groupMember.IsGroupMember
                                 }
-                                $allPermanentAssignments += $permanentInfo
-                                
-                                # Als dit een groep is, haal dan ook de leden op
-                                if ($principalInfo.UserType -eq "Group") {
-                                    $groupMembers = Get-GroupMembers -GroupId $member.Id -Customer $CustomerName -GroupName $principalInfo.DisplayName -RoleName $role.DisplayName -AssignmentType "Permanent" -AssignmentState "Active" -StartDateTime ([DateTime]::MinValue) -EndDateTime ([DateTime]::MaxValue)
-                                    foreach ($groupMember in $groupMembers) {
-                                        $memberPermanentInfo = [PSCustomObject]@{
-                                            Customer = $groupMember.Customer
-                                            TenantId = $TenantId
-                                            UserPrincipalName = $groupMember.UserPrincipalName
-                                            DisplayName = $groupMember.DisplayName
-                                            PrincipalId = $groupMember.PrincipalId
-                                            EmailAddress = $groupMember.Email
-                                            UserType = $groupMember.UserType
-                                            RoleName = $groupMember.RoleName
-                                            RoleId = $role.Id
-                                            RoleTemplateId = $role.RoleTemplateId
-                                            AssignmentType = $groupMember.AssignmentType
-                                            Status = "Active"
-                                            CreatedDateTime = $groupMember.CreatedDateTime
-                                            StartDateTime = "N/A"
-                                            EndDateTime = "Never"
-                                            DirectoryScope = "/"
-                                            AssignmentId = "Permanent_$($role.Id)_$($groupMember.PrincipalId)_via_$($member.Id)"
-                                            AccountEnabled = $groupMember.AccountEnabled
-                                            Department = $groupMember.Department
-                                            JobTitle = $groupMember.JobTitle
-                                            CompanyName = $groupMember.CompanyName
-                                            IsPIMManaged = $false
-                                            ViaGroup = $groupMember.ViaGroup
-                                            IsGroupMember = $groupMember.IsGroupMember
-                                        }
-                                        $allPermanentAssignments += $memberPermanentInfo
-                                    }
-                                }
+                                $allPermanentAssignments += $memberPermanentInfo
                             }
-                        }
-                        catch {
-                            Write-Warning "Fout bij verwerken van permanent role member: $($_.Exception.Message)"
                         }
                     }
                 }
                 catch {
-                    Write-Warning "Kon role members niet ophalen voor rol '$($role.DisplayName)': $($_.Exception.Message)"
+                    Write-Warning "Fout bij verwerken van klassiek assignment: $($_.Exception.Message)"
                 }
             }
         }
         catch {
-            Write-Warning "Kon directory roles niet ophalen: $($_.Exception.Message)"
+            Write-Warning "Kon klassieke role assignments niet ophalen: $($_.Exception.Message)"
         }
         
         Write-Host "✓ Gevonden $($allPermanentAssignments.Count) permanente rol-toewijzingen voor $CustomerName" -ForegroundColor Green
@@ -677,13 +680,194 @@ function Get-PermanentRoleAssignments {
     }
 }
 
+# Functie om wijzigingen te detecteren tussen exports
+function Compare-PIMExports {
+    param(
+        [array]$CurrentResults,
+        [string]$ExportPath,
+        [string]$DatePrefix
+    )
+    
+    $changes = @()
+    
+    try {
+        Write-Host "Detecteren van wijzigingen ten opzichte van vorige export..." -ForegroundColor Yellow
+        
+        # Zoek naar vorige export bestanden (oudere datums dan huidige)
+        $allFiles = Get-ChildItem -Path $ExportPath -Filter "*_All_Customers_Full_Report.csv" | 
+                   Where-Object { $_.Name -notlike "$DatePrefix*" }
+        
+        if ($allFiles.Count -eq 0) {
+            Write-Host "  - Geen vorige export gevonden. Dit is waarschijnlijk de eerste run." -ForegroundColor Gray
+            return @()
+        }
+        
+        # Sorteer op datum in bestandsnaam (nieuwste eerst)
+        $previousFiles = $allFiles | Sort-Object { 
+            # Extract datum uit bestandsnaam (YYYYMMDD)
+            if ($_.Name -match '^(\d{8})_') { 
+                [datetime]::ParseExact($matches[1], 'yyyyMMdd', $null) 
+            } else { 
+                $_.CreationTime 
+            }
+        } -Descending | Select-Object -First 1
+        
+        $previousFile = $previousFiles.FullName
+        Write-Host "  - Vorige export gevonden: $($previousFiles.Name)" -ForegroundColor Cyan
+        
+        # Lees vorige export
+        try {
+            $previousResults = Import-Csv -Path $previousFile -ErrorAction Stop
+            Write-Host "  - Vorige export geladen: $($previousResults.Count) records" -ForegroundColor Green
+        }
+        catch {
+            Write-Warning "Kon vorige export niet laden: $($_.Exception.Message)"
+            return @()
+        }
+        
+        # Maak unieke identifiers voor vergelijking
+        Write-Host "  - Analyseren van wijzigingen..." -ForegroundColor Cyan
+        
+        # Huidige data voorbereiden
+        $currentLookup = @{}
+        foreach ($record in $CurrentResults) {
+            $key = "$($record.Customer)_$($record.PrincipalId)_$($record.RoleName)"
+            $currentLookup[$key] = $record
+        }
+        
+        # Vorige data voorbereiden  
+        $previousLookup = @{}
+        foreach ($record in $previousResults) {
+            $key = "$($record.Customer)_$($record.PrincipalId)_$($record.RoleName)"
+            $previousLookup[$key] = $record
+        }
+        
+        # Detecteer nieuwe assignments
+        foreach ($key in $currentLookup.Keys) {
+            if (-not $previousLookup.ContainsKey($key)) {
+                $record = $currentLookup[$key]
+                $change = [PSCustomObject]@{
+                    ChangeType = "NEW"
+                    Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                    Customer = $record.Customer
+                    DisplayName = $record.DisplayName
+                    UserPrincipalName = $record.UserPrincipalName
+                    RoleName = $record.RoleName
+                    AssignmentType = $record.AssignmentType
+                    UserType = $record.UserType
+                    ViaGroup = $record.ViaGroup
+                    PreviousValue = "N/A"
+                    CurrentValue = "$($record.AssignmentType)"
+                    Description = "Nieuwe rol toewijzing gedetecteerd"
+                    PrincipalId = $record.PrincipalId
+                }
+                $changes += $change
+            }
+        }
+        
+        # Detecteer verwijderde assignments
+        foreach ($key in $previousLookup.Keys) {
+            if (-not $currentLookup.ContainsKey($key)) {
+                $record = $previousLookup[$key]
+                $change = [PSCustomObject]@{
+                    ChangeType = "REMOVED"
+                    Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                    Customer = $record.Customer
+                    DisplayName = $record.DisplayName
+                    UserPrincipalName = $record.UserPrincipalName
+                    RoleName = $record.RoleName
+                    AssignmentType = $record.AssignmentType
+                    UserType = $record.UserType
+                    ViaGroup = $record.ViaGroup
+                    PreviousValue = "$($record.AssignmentType)"
+                    CurrentValue = "N/A"
+                    Description = "Rol toewijzing verwijderd"
+                    PrincipalId = $record.PrincipalId
+                }
+                $changes += $change
+            }
+        }
+        
+        # Detecteer gewijzigde assignment types (bijv. Eligible -> Active)
+        foreach ($key in $currentLookup.Keys) {
+            if ($previousLookup.ContainsKey($key)) {
+                $current = $currentLookup[$key]
+                $previous = $previousLookup[$key]
+                
+                if ($current.AssignmentType -ne $previous.AssignmentType) {
+                    $change = [PSCustomObject]@{
+                        ChangeType = "MODIFIED"
+                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                        Customer = $current.Customer
+                        DisplayName = $current.DisplayName
+                        UserPrincipalName = $current.UserPrincipalName
+                        RoleName = $current.RoleName
+                        AssignmentType = $current.AssignmentType
+                        UserType = $current.UserType
+                        ViaGroup = $current.ViaGroup
+                        PreviousValue = $previous.AssignmentType
+                        CurrentValue = $current.AssignmentType
+                        Description = "Assignment type gewijzigd van $($previous.AssignmentType) naar $($current.AssignmentType)"
+                        PrincipalId = $current.PrincipalId
+                    }
+                    $changes += $change
+                }
+                
+                # Check voor wijzigingen in groepstoewijzing
+                if ($current.ViaGroup -ne $previous.ViaGroup) {
+                    $change = [PSCustomObject]@{
+                        ChangeType = "MODIFIED"
+                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                        Customer = $current.Customer
+                        DisplayName = $current.DisplayName
+                        UserPrincipalName = $current.UserPrincipalName
+                        RoleName = $current.RoleName
+                        AssignmentType = $current.AssignmentType
+                        UserType = $current.UserType
+                        ViaGroup = $current.ViaGroup
+                        PreviousValue = $previous.ViaGroup
+                        CurrentValue = $current.ViaGroup
+                        Description = "Groepstoewijzing gewijzigd van '$($previous.ViaGroup)' naar '$($current.ViaGroup)'"
+                        PrincipalId = $current.PrincipalId
+                    }
+                    $changes += $change
+                }
+            }
+        }
+        
+        # Rapporteer resultaten
+        $newCount = ($changes | Where-Object { $_.ChangeType -eq "NEW" }).Count
+        $removedCount = ($changes | Where-Object { $_.ChangeType -eq "REMOVED" }).Count
+        $modifiedCount = ($changes | Where-Object { $_.ChangeType -eq "MODIFIED" }).Count
+        
+        Write-Host "✓ Wijzigingsanalyse voltooid:" -ForegroundColor Green
+        Write-Host "  - Nieuwe toewijzingen: $newCount" -ForegroundColor Green
+        Write-Host "  - Verwijderde toewijzingen: $removedCount" -ForegroundColor Red
+        Write-Host "  - Gewijzigde toewijzingen: $modifiedCount" -ForegroundColor Yellow
+        
+        # Exporteer wijzigingen naar CSV
+        if ($changes.Count -gt 0) {
+            $changesPath = Join-Path $ExportPath "${DatePrefix}_Changes_Report.csv"
+            $changes | Export-Csv -Path $changesPath -NoTypeInformation -Encoding UTF8
+            Write-Host "✓ Wijzigingen rapport opgeslagen: $changesPath" -ForegroundColor Green
+        }
+        
+        return $changes
+    }
+    catch {
+        Write-Error "Fout bij wijzigingsdetectie: $($_.Exception.Message)"
+        return @()
+    }
+}
+
 # Functie om HTML dashboard te genereren
 function New-HTMLDashboard {
     param(
         [array]$AllResults,
         [string]$ExportPath,
         [string]$DatePrefix,
-        [hashtable]$Config
+        [hashtable]$Config,
+        [array]$Changes = @()
     )
     
     try {
@@ -692,6 +876,150 @@ function New-HTMLDashboard {
         # Groepeer data per klant
         $customerGroups = $AllResults | Group-Object Customer
         
+        # Wijzigingen statistieken (altijd tonen, ook bij 0)
+        $newChanges = ($Changes | Where-Object { $_.ChangeType -eq "NEW" }).Count
+        $removedChanges = ($Changes | Where-Object { $_.ChangeType -eq "REMOVED" }).Count
+        $modifiedChanges = ($Changes | Where-Object { $_.ChangeType -eq "MODIFIED" }).Count
+        
+        $changesStats = @"
+        <div class="stat-card changes-new">
+            <h4>Nieuwe Toewijzingen</h4>
+            <div class="stat-number">$newChanges</div>
+        </div>
+        <div class="stat-card changes-removed">
+            <h4>Verwijderde Toewijzingen</h4>
+            <div class="stat-number">$removedChanges</div>
+        </div>
+        <div class="stat-card changes-modified">
+            <h4>Gewijzigde Toewijzingen</h4>
+            <div class="stat-number">$modifiedChanges</div>
+        </div>
+"@
+        
+        # Wijzigingen tab (altijd tonen)
+        $changesTab = '<button class="tablinks" onclick="showChanges(event)"><i class="fa-solid fa-exchange-alt"></i> Wijzigingen</button>'
+            
+            # Bouw wijzigingen tabel
+            $changesTableRows = ""
+            foreach ($change in $Changes) {
+                $changeTypeColor = switch ($change.ChangeType) {
+                    "NEW" { "color: #28a745; font-weight: bold;" }
+                    "REMOVED" { "color: #dc3545; font-weight: bold;" }
+                    "MODIFIED" { "color: #ffc107; font-weight: bold;" }
+                    default { "" }
+                }
+                
+                $changeIcon = switch ($change.ChangeType) {
+                    "NEW" { "fa-plus-circle" }
+                    "REMOVED" { "fa-minus-circle" }
+                    "MODIFIED" { "fa-edit" }
+                    default { "fa-question-circle" }
+                }
+                
+                $changesTableRows += @"
+                <tr>
+                    <td><i class="fa-solid $changeIcon" style="$changeTypeColor"></i> <span style="$changeTypeColor">$($change.ChangeType)</span></td>
+                    <td>$($change.Timestamp)</td>
+                    <td>$($change.Customer)</td>
+                    <td>$($change.DisplayName)</td>
+                    <td>$($change.UserPrincipalName)</td>
+                    <td>$($change.RoleName)</td>
+                    <td>$($change.PreviousValue)</td>
+                    <td>$($change.CurrentValue)</td>
+                    <td>$($change.Description)</td>
+                </tr>
+"@
+            }
+            
+        # Wijzigingen content (altijd tonen)
+        $changesTableRows = ""
+        $noChangesMessage = ""
+        
+        if ($Changes.Count -gt 0) {
+            # Bouw wijzigingen tabel
+            foreach ($change in $Changes) {
+                $changeTypeColor = switch ($change.ChangeType) {
+                    "NEW" { "color: #28a745; font-weight: bold;" }
+                    "REMOVED" { "color: #dc3545; font-weight: bold;" }
+                    "MODIFIED" { "color: #ffc107; font-weight: bold;" }
+                    default { "" }
+                }
+                
+                $changeIcon = switch ($change.ChangeType) {
+                    "NEW" { "fa-plus-circle" }
+                    "REMOVED" { "fa-minus-circle" }
+                    "MODIFIED" { "fa-edit" }
+                    default { "fa-question-circle" }
+                }
+                
+                $changesTableRows += @"
+                <tr>
+                    <td><i class="fa-solid $changeIcon" style="$changeTypeColor"></i> <span style="$changeTypeColor">$($change.ChangeType)</span></td>
+                    <td>$($change.Timestamp)</td>
+                    <td>$($change.Customer)</td>
+                    <td>$($change.DisplayName)</td>
+                    <td>$($change.UserPrincipalName)</td>
+                    <td>$($change.RoleName)</td>
+                    <td>$($change.PreviousValue)</td>
+                    <td>$($change.CurrentValue)</td>
+                    <td>$($change.Description)</td>
+                </tr>
+"@
+            }
+        } else {
+            $noChangesMessage = @"
+        <div style="text-align: center; padding: 40px; color: #6c757d; background: #f8f9fa; border-radius: 8px; margin: 20px 0;">
+            <i class="fa-solid fa-check-circle" style="font-size: 48px; color: #28a745; margin-bottom: 15px;"></i>
+            <h4 style="margin: 0 0 10px 0; color: #495057;">Geen wijzigingen gedetecteerd</h4>
+            <p style="margin: 0; font-size: 16px;">Alle rol-toewijzingen zijn hetzelfde gebleven sinds de vorige export.</p>
+        </div>
+"@
+        }
+        
+        $changesContent = @"
+    <div id="Changes" class="tabcontent">
+        <h3><i class="fa-solid fa-exchange-alt"></i> Wijzigingen sinds vorige export</h3>
+        
+        <div class="stats-grid">
+            <div class="stat-card changes-new">
+                <h4>Nieuwe Toewijzingen</h4>
+                <div class="stat-number">$(($Changes | Where-Object { $_.ChangeType -eq "NEW" }).Count)</div>
+            </div>
+            <div class="stat-card changes-removed">
+                <h4>Verwijderde Toewijzingen</h4>
+                <div class="stat-number">$(($Changes | Where-Object { $_.ChangeType -eq "REMOVED" }).Count)</div>
+            </div>
+            <div class="stat-card changes-modified">
+                <h4>Gewijzigde Toewijzingen</h4>
+                <div class="stat-number">$(($Changes | Where-Object { $_.ChangeType -eq "MODIFIED" }).Count)</div>
+            </div>
+        </div>
+        
+        $noChangesMessage
+        
+        <h4>Alle Wijzigingen</h4>
+        <table id="changesTable" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Tijdstip</th>
+                    <th>Klant</th>
+                    <th>Naam</th>
+                    <th>UPN</th>
+                    <th>Rol</th>
+                    <th>Vorige Waarde</th>
+                    <th>Huidige Waarde</th>
+                    <th>Beschrijving</th>
+                </tr>
+            </thead>
+            <tbody>
+                $changesTableRows
+            </tbody>
+        </table>
+    </div>
+
+"@
+
         # Bouw customer tabs
         $customerTabs = ""
         $customerTables = ""
@@ -867,6 +1195,11 @@ function New-HTMLDashboard {
             $('table[id^="overviewTable_"]').each(function() {
                 initializeDataTable(this.id);
             });
+            
+            // Initialiseer wijzigingen tabel als deze bestaat
+            if ($('#changesTable').length) {
+                initializeDataTable('changesTable');
+            }
         });
 '@
         
@@ -937,6 +1270,12 @@ function New-HTMLDashboard {
     .stat-card.global-admin .stat-number { color: #e68900; }
     .stat-card.adoption { border-left-color: #17a2b8; }
     .stat-card.adoption .stat-number { color: #17a2b8; }
+    .stat-card.changes-new { border-left-color: #28a745; }
+    .stat-card.changes-new .stat-number { color: #28a745; }
+    .stat-card.changes-removed { border-left-color: #dc3545; }
+    .stat-card.changes-removed .stat-number { color: #dc3545; }
+    .stat-card.changes-modified { border-left-color: #ffc107; }
+    .stat-card.changes-modified .stat-number { color: #e68900; }
     
     /* Content Layout */
     .content-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
@@ -974,6 +1313,9 @@ function New-HTMLDashboard {
     body.darkmode .stat-card.permanent .stat-number { color: #ff4d4d; }
     body.darkmode .stat-card.global-admin .stat-number { color: #ffcc4d; }
     body.darkmode .stat-card.adoption .stat-number { color: #4dffff; }
+    body.darkmode .stat-card.changes-new .stat-number { color: #4dff4d; }
+    body.darkmode .stat-card.changes-removed .stat-number { color: #ff4d4d; }
+    body.darkmode .stat-card.changes-modified .stat-number { color: #ffcc4d; }
     body.darkmode .top-roles { background: #1e1e1e; color: #e0e0e0; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
     body.darkmode .top-roles h4 { color: #e0e0e0; }
     body.darkmode .tab { border-bottom: 2px solid #333; }
@@ -1041,10 +1383,12 @@ function New-HTMLDashboard {
             <h4>PIM Adoptie</h4>
             <div class="stat-number">$overallPimAdoption%</div>
         </div>
+        $changesStats
     </div>
 
     <div class="tab">
         <button class="tablinks active" onclick="showOverview(event)">Overzicht</button>
+        $changesTab
         $customerTabs
     </div>
 
@@ -1074,6 +1418,7 @@ function New-HTMLDashboard {
         </div>
     </div>
 
+    $changesContent
     $customerTables
     
     <div class="footer">
@@ -1117,6 +1462,25 @@ function New-HTMLDashboard {
         document.getElementById("Overview").style.display = "block";
         evt.currentTarget.className += " active";
     }
+    
+    function showChanges(evt) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tablinks");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById("Changes").style.display = "block";
+        evt.currentTarget.className += " active";
+        
+        // Initialiseer DataTable voor wijzigingen
+        setTimeout(function() {
+            initializeDataTable('changesTable');
+        }, 100);
+    }
 </script>
 </body>
 </html>
@@ -1134,25 +1498,70 @@ function New-HTMLDashboard {
     }
 }
 
+# Functie om bestaande exports te laden voor rapport-only mode
+function Get-ExistingExportData {
+    param(
+        [string]$ExportPath,
+        [string]$DatePrefix
+    )
+    
+    try {
+        Write-Host "Zoeken naar bestaande export bestanden..." -ForegroundColor Cyan
+        
+        # Zoek naar het meest recente volledige rapport (sorteer op datum in bestandsnaam)
+        $fullReportPattern = "*_All_Customers_Full_Report.csv"
+        $allReports = Get-ChildItem -Path $ExportPath -Filter $fullReportPattern | Sort-Object { 
+            # Extract datum uit bestandsnaam (YYYYMMDD)
+            if ($_.Name -match '^(\d{8})_') { 
+                [datetime]::ParseExact($matches[1], 'yyyyMMdd', $null) 
+            } else { 
+                $_.LastWriteTime 
+            }
+        } -Descending
+        
+        if ($allReports.Count -eq 0) {
+            Write-Error "Geen bestaande export bestanden gevonden in: $ExportPath"
+            Write-Host "Verwachte bestandsnaam patroon: ${fullReportPattern}" -ForegroundColor Yellow
+            return $null
+        }
+        
+        # Gebruik het meest recente rapport
+        $latestReport = $allReports[0]
+        Write-Host "✓ Gevonden meest recente export: $($latestReport.Name)" -ForegroundColor Green
+        Write-Host "  Laatst gewijzigd: $($latestReport.LastWriteTime)" -ForegroundColor Gray
+        
+        # Laad de data
+        $exportData = Import-Csv -Path $latestReport.FullName -Encoding UTF8
+        Write-Host "✓ Export data geladen: $($exportData.Count) records" -ForegroundColor Green
+        
+        # Extract datum prefix van bestandsnaam voor consistentie
+        $extractedDatePrefix = $latestReport.Name -replace '_All_Customers_Full_Report\.csv$', ''
+        
+        return @{
+            Data = $exportData
+            DatePrefix = $extractedDatePrefix
+            SourceFile = $latestReport.FullName
+            LastModified = $latestReport.LastWriteTime
+        }
+    }
+    catch {
+        Write-Error "Fout bij laden van bestaande export data: $($_.Exception.Message)"
+        return $null
+    }
+}
+
 # Hoofdscript
 function Main {
     Write-Host "=== PIM & Permanent Role Users Report - Multi Tenant ===" -ForegroundColor Magenta
     Write-Host "Versie: $ProjectVersion" -ForegroundColor Gray
     Write-Host "Start tijd: $(Get-Date)" -ForegroundColor Gray
+    
+    if ($ReportOnly) {
+        Write-Host "Mode: Alleen HTML rapport genereren (geen nieuwe data ophalen)" -ForegroundColor Yellow
+    } else {
+        Write-Host "Mode: Volledige data export en rapport generatie" -ForegroundColor Green
+    }
     Write-Host ""
-    
-    # Lijst van benodigde modules
-    $RequiredModules = @(
-        "Microsoft.Graph.Authentication",
-        "Microsoft.Graph.Identity.Governance",
-        "Microsoft.Graph.Identity.DirectoryManagement",
-        "Microsoft.Graph.Users",
-        "Microsoft.Graph.Groups",
-        "Microsoft.Graph.Applications"
-    )
-    
-    # Installeer en importeer benodigde modules
-    Install-RequiredModules -ModuleNames $RequiredModules
     
     # Laad configuratie
     $config = Get-ScriptConfig -ConfigFile $ConfigFile -OutputPathOverride $OutputPath
@@ -1166,6 +1575,76 @@ function Main {
     
     Write-Host "Export locatie: $exportPath" -ForegroundColor Cyan
     Write-Host ""
+    
+    # ReportOnly mode: laad bestaande data en genereer alleen HTML rapport
+    if ($ReportOnly) {
+        Write-Host "--- Rapport-Only Mode ---" -ForegroundColor Yellow
+        
+        # Probeer huidige datum prefix te gebruiken, of gebruik bestaande data
+        $datePrefix = Get-Date -Format "yyyyMMdd"
+        $existingData = Get-ExistingExportData -ExportPath $exportPath -DatePrefix $datePrefix
+        
+        if (-not $existingData) {
+            Write-Error "Kon geen bestaande export data vinden. Voer eerst het script uit zonder -ReportOnly parameter."
+            exit 1
+        }
+        
+        $allResults = $existingData.Data
+        $datePrefix = $existingData.DatePrefix
+        
+        Write-Host "✓ Bestaande data geladen van: $($existingData.LastModified)" -ForegroundColor Green
+        Write-Host "✓ Aantal records: $($allResults.Count)" -ForegroundColor Green
+        Write-Host "✓ Gebruikt datum prefix: $datePrefix" -ForegroundColor Green
+        Write-Host ""
+        
+        # Detecteer wijzigingen ten opzichte van vorige export
+        Write-Host "--- Wijzigingen detecteren ---" -ForegroundColor Yellow
+        $changes = Compare-PIMExports -CurrentResults $allResults -ExportPath $exportPath -DatePrefix $datePrefix
+        
+        # Genereer HTML Dashboard
+        Write-Host "--- HTML Dashboard genereren ---" -ForegroundColor Yellow
+        $htmlPath = New-HTMLDashboard -AllResults $allResults -ExportPath $exportPath -DatePrefix $datePrefix -Config $config -Changes $changes
+        
+        if ($htmlPath) {
+            Write-Host "✓ HTML Dashboard gegenereerd: $htmlPath" -ForegroundColor Green
+            
+            # Open HTML rapport automatisch als geconfigureerd
+            if ($config.ReportSettings.AutoOpenHTMLReport) {
+                try {
+                    if ((Test-Path $htmlPath -PathType Leaf) -and ($htmlPath.ToLower().EndsWith(".html"))) {
+                        Write-Host "📖 HTML rapport wordt geopend in standaard browser..." -ForegroundColor Cyan
+                        Start-Process $htmlPath
+                    }
+                } catch {
+                    Write-Warning "Kon HTML rapport niet automatisch openen: $($_.Exception.Message)"
+                }
+            }
+        } else {
+            Write-Error "HTML Dashboard kon niet worden gegenereerd"
+            exit 1
+        }
+        
+        Write-Host ""
+        Write-Host "=== Rapport-Only Mode Voltooid ===" -ForegroundColor Green
+        Write-Host "HTML Dashboard: $htmlPath" -ForegroundColor Cyan
+        Write-Host "Gebaseerd op data van: $($existingData.LastModified)" -ForegroundColor Gray
+        Write-Host "Eind tijd: $(Get-Date)" -ForegroundColor Gray
+        return
+    }
+    
+    # Normale mode: haal nieuwe data op
+    # Lijst van benodigde modules
+    $RequiredModules = @(
+        "Microsoft.Graph.Authentication",
+        "Microsoft.Graph.Identity.Governance", 
+        "Microsoft.Graph.Identity.DirectoryManagement",
+        "Microsoft.Graph.Users",
+        "Microsoft.Graph.Groups",
+        "Microsoft.Graph.Applications"
+    )
+    
+    # Installeer en importeer benodigde modules
+    Install-RequiredModules -ModuleNames $RequiredModules
     
     # Lees credentials
     $credentialsFile = "credentials.json"
@@ -1391,8 +1870,12 @@ function Main {
     # Genereer HTML Dashboard
     Write-Host ""
     Write-Host "--- HTML Dashboard genereren ---" -ForegroundColor Yellow
+    
+    # Detecteer wijzigingen ten opzichte van vorige export
+    $changes = Compare-PIMExports -CurrentResults $allResults -ExportPath $exportPath -DatePrefix $datePrefix
+    
     if ($config.ReportSettings.GenerateHTMLDashboard) {
-        $htmlPath = New-HTMLDashboard -AllResults $allResults -ExportPath $exportPath -DatePrefix $datePrefix -Config $config
+        $htmlPath = New-HTMLDashboard -AllResults $allResults -ExportPath $exportPath -DatePrefix $datePrefix -Config $config -Changes $changes
         if ($htmlPath) {
             Write-Host "✓ HTML Dashboard gegenereerd: $htmlPath" -ForegroundColor Green
             

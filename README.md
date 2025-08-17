@@ -60,7 +60,7 @@ Het script biedt automatische backup functionaliteit voor:
 
 ### Backup Structuur
 
-```
+```text
 backups/
 ├── exports/
 │   ├── exports-20250817_200746.zip
@@ -72,7 +72,8 @@ backups/
     └── ...
 ```
 
-## 🔧 Troubleshooting*PIM rol-toewijzingen** (Eligible en Active)
+## 🔧 Troubleshooting*PIM rol-toewijzingen** (Eligible en Active)'
+
 - **Permanente roltoewijzingen** (niet via PIM)
 - **Groepslidmaatschap** voor privileged rollen
 - **Multi-tenant ondersteuning** voor MSP's en grote organisaties

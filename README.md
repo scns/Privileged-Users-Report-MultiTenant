@@ -221,6 +221,26 @@ Alle bestanden gebruiken het format: `YYYYMMDD_Customer_ReportType.csv`
 - **Customer tabs** - Gefocusseerde analyse per klant
 - **Real-time filters** - Dynamische data filtering
 - **Responsive statistieken** - Automatisch aangepaste lay-out
+- **Clickable filter buttons** - Directe filtering per rol type
+
+#### 🎯 Clickable Filter Buttons
+
+Elke customer tab bevat intelligente filter buttons voor snelle data analyse:
+
+- **🗂️ Alle** - Toont alle rol-toewijzingen (totaal aantal tussen haakjes)
+- **🔵 Eligible** - Filtert alleen PIM Eligible rollen die geactiveerd kunnen worden
+- **🟢 Active** - Toont alleen momenteel actieve PIM rollen
+- **🔴 Permanent** - Toont permanente rollen (security risk - direct toegewezen)
+- **👤 Users** - Filtert alleen gebruikers (exclusief service principals)
+- **⚡ Global Admins** - Toont alleen Global Administrator rollen
+
+**Functionaliteit:**
+
+- **Direct klikken** - Geen reload nodig, client-side filtering
+- **Visual feedback** - Actieve filter wordt gemarkeerd
+- **Aantal indicatie** - Elk filter toont het aantal resultaten
+- **Snelle navigatie** - Schakel moeiteloos tussen verschillende views
+- **Kleurcodering** - Visuele identificatie van rol types
 
 ### 🔍 Data Visualisatie
 
@@ -296,9 +316,52 @@ Install-Module Microsoft.Graph.Identity.Governance -Scope CurrentUser
 
 #### "Group members not detected"
 
-- Controleer `Group.Read.All` permission
-- Verificeer groep bestaat in tenant
-- Check output logs voor error details
+**Symptomen:**
+
+- Script rapporteert groepsleden niet in de output
+- Alleen directe rol-toewijzingen zijn zichtbaar
+- Missing group membership data in reports
+
+**Mogelijke oorzaken en oplossingen:**
+
+1. **Microsoft Graph permissions**:
+
+   ```text
+   Benodigde permissions:
+   - Group.Read.All (Application permission)
+   - Directory.Read.All (Application permission)
+   ```
+
+2. **Admin consent**:
+
+   - Zorg dat admin consent is verleend voor alle permissions
+   - Check Azure AD > App registrations > [Your App] > API permissions
+   - "Grant admin consent" moet groen zijn
+
+3. **Groep configuratie**:
+
+   - Verificeer dat security groups bestaan in de tenant
+   - Check of groepen daadwerkelijk leden hebben
+   - Controleer of groepen zijn toegewezen aan Azure AD rollen
+
+4. **Script logging controleren**:
+
+   ```powershell
+   # Run script met verbose output
+   .\Get-PIMUsers.ps1 -Verbose
+   
+   # Check voor specifieke error messages
+   # Kijk naar "Group enumeration" sectie in output
+   ```
+
+5. **Manual verificatie**:
+
+   ```powershell
+   # Test Group API connectivity
+   Connect-MgGraph -Scopes "Group.Read.All"
+   Get-MgGroup -Filter "displayName eq 'YourGroupName'"
+   Get-MgGroupMember -GroupId "group-id-here"
+   ```
 
 ## 🤝 Contributing
 

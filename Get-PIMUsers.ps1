@@ -1137,6 +1137,30 @@ function New-HTMLDashboard {
             </div>
         </div>
         
+        <div style="margin: 20px 0; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+            <h4 style="margin: 0 0 15px 0; color: #495057;"><i class="fa-solid fa-filter"></i> Filter Opties</h4>
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="filterCustomerTable('$safeCustomerName', 'all')">
+                    <i class="fa-solid fa-list"></i> Alle ($totalAssignments)
+                </button>
+                <button class="filter-btn eligible" onclick="filterCustomerTable('$safeCustomerName', 'eligible')">
+                    <i class="fa-solid fa-clock"></i> PIM Eligible ($pimEligible)
+                </button>
+                <button class="filter-btn active-filter" onclick="filterCustomerTable('$safeCustomerName', 'active')">
+                    <i class="fa-solid fa-check-circle"></i> PIM Active ($pimActive)
+                </button>
+                <button class="filter-btn permanent" onclick="filterCustomerTable('$safeCustomerName', 'permanent')">
+                    <i class="fa-solid fa-exclamation-triangle"></i> Permanent ($permanentRoles)
+                </button>
+                <button class="filter-btn" onclick="filterCustomerTable('$safeCustomerName', 'users')">
+                    <i class="fa-solid fa-users"></i> Alleen Gebruikers
+                </button>
+                <button class="filter-btn global-admin" onclick="filterCustomerTable('$safeCustomerName', 'globaladmins')">
+                    <i class="fa-solid fa-crown"></i> Global Admins ($globalAdmins)
+                </button>
+            </div>
+        </div>
+        
         <div class="content-row">
             <div class="top-roles">
                 <h4>Top 5 Rollen</h4>
@@ -1146,7 +1170,7 @@ function New-HTMLDashboard {
             </div>
         </div>
         
-        <h4>Alle Rol Toewijzingen</h4>
+        <h4>Rol Toewijzingen <span id="filterLabel_$safeCustomerName" style="color: #6c757d; font-weight: normal;">(Alle toewijzingen)</span></h4>
         <table id="overviewTable_$safeCustomerName" class="display" style="width:100%">
             <thead>
                 <tr>
@@ -1219,6 +1243,58 @@ function New-HTMLDashboard {
                 initializeDataTable('changesTable');
             }
         });
+        
+        // Filter functionaliteit
+        function filterCustomerTable(customerName, filterType) {
+            var tableId = 'overviewTable_';
+            tableId = tableId + customerName;
+            var tableObj = document.getElementById(tableId);
+            if (!tableObj) return;
+            
+            var table = $(tableObj).DataTable();
+            var labelId = 'filterLabel_';
+            labelId = labelId + customerName;
+            var label = document.getElementById(labelId);
+            
+            // Update active button
+            var customerDiv = document.getElementById(customerName);
+            var filterButtons = customerDiv.querySelectorAll('.filter-btn');
+            filterButtons.forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Clear all existing searches first
+            table.search('').columns().search('').draw();
+            
+            // Apply filter and update label
+            switch(filterType) {
+                case 'all':
+                    // Show all rows - already cleared above
+                    label.textContent = '(Alle toewijzingen)';
+                    break;
+                case 'eligible':
+                    table.column(3).search('Eligible', false, false).draw();
+                    label.textContent = '(PIM Eligible rollen)';
+                    break;
+                case 'active':
+                    table.column(3).search('Active', false, false).draw();
+                    label.textContent = '(PIM Active rollen)';
+                    break;
+                case 'permanent':
+                    table.column(3).search('Permanent', false, false).draw();
+                    label.textContent = '(Permanente rollen)';
+                    break;
+                case 'users':
+                    table.column(4).search('User', false, false).draw();
+                    label.textContent = '(Alleen gebruikers)';
+                    break;
+                case 'globaladmins':
+                    table.column(2).search('Global Administrator', false, false).draw();
+                    label.textContent = '(Global Administrators)';
+                    break;
+            }
+        }
 '@
         
         $lastRunDate = Get-Date -Format "dd-MM-yyyy HH:mm"
@@ -1264,6 +1340,12 @@ function New-HTMLDashboard {
                 setTheme(!currentlyDark);
             });
         }
+        
+        // Initialize first tab
+        setTimeout(function() {
+            var firstTab = document.getElementsByClassName("tablinks")[0];
+            if (firstTab) firstTab.click();
+        }, 100);
     });
     </script>
     <style>
@@ -1309,6 +1391,41 @@ function New-HTMLDashboard {
     .tab button.active { background-color: #0066cc; color: white; }
     .tabcontent { display: none; }
     
+    /* Filter Buttons */
+    .filter-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+    .filter-btn { 
+        background: white; 
+        border: 2px solid #dee2e6; 
+        padding: 8px 16px; 
+        border-radius: 6px; 
+        cursor: pointer; 
+        font-size: 14px; 
+        font-weight: 500;
+        transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .filter-btn:hover { 
+        background: #f8f9fa; 
+        border-color: #0066cc; 
+        transform: translateY(-1px);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .filter-btn.active { 
+        background: #0066cc; 
+        color: white; 
+        border-color: #0066cc; 
+    }
+    .filter-btn.eligible { border-color: #0066cc; color: #0066cc; }
+    .filter-btn.eligible:hover, .filter-btn.eligible.active { background: #0066cc; color: white; }
+    .filter-btn.active-filter { border-color: #28a745; color: #28a745; }
+    .filter-btn.active-filter:hover, .filter-btn.active-filter.active { background: #28a745; color: white; }
+    .filter-btn.permanent { border-color: #dc3545; color: #dc3545; }
+    .filter-btn.permanent:hover, .filter-btn.permanent.active { background: #dc3545; color: white; }
+    .filter-btn.global-admin { border-color: #ffc107; color: #e68900; }
+    .filter-btn.global-admin:hover, .filter-btn.global-admin.active { background: #ffc107; color: #212529; }
+    
     /* Tables */
     table.dataTable { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     table.dataTable thead th { background: #f8f9fa; color: #495057; font-weight: 600; padding: 12px; border-bottom: 2px solid #dee2e6; }
@@ -1346,6 +1463,19 @@ function New-HTMLDashboard {
     body.darkmode table.dataTable tbody tr:hover { background-color: #333; }
     body.darkmode .footer { border-top: 1px solid #333; color: #b0b0b0; }
     body.darkmode .footer a { color: #4da6ff; }
+    
+    /* Dark mode filter buttons */
+    body.darkmode .filter-btn { background: #1e1e1e; border-color: #333; color: #e0e0e0; }
+    body.darkmode .filter-btn:hover { background: #333; border-color: #4da6ff; }
+    body.darkmode .filter-btn.active { background: #0066cc; color: white; border-color: #0066cc; }
+    body.darkmode .filter-btn.eligible { border-color: #4da6ff; color: #4da6ff; }
+    body.darkmode .filter-btn.eligible:hover, body.darkmode .filter-btn.eligible.active { background: #4da6ff; color: #121212; }
+    body.darkmode .filter-btn.active-filter { border-color: #4dff4d; color: #4dff4d; }
+    body.darkmode .filter-btn.active-filter:hover, body.darkmode .filter-btn.active-filter.active { background: #4dff4d; color: #121212; }
+    body.darkmode .filter-btn.permanent { border-color: #ff4d4d; color: #ff4d4d; }
+    body.darkmode .filter-btn.permanent:hover, body.darkmode .filter-btn.permanent.active { background: #ff4d4d; color: #121212; }
+    body.darkmode .filter-btn.global-admin { border-color: #ffcc4d; color: #ffcc4d; }
+    body.darkmode .filter-btn.global-admin:hover, body.darkmode .filter-btn.global-admin.active { background: #ffcc4d; color: #121212; }
     
     /* Button Styling */
     #darkModeToggle { 

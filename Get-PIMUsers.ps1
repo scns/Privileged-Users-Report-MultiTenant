@@ -109,6 +109,16 @@ function Get-ScriptConfig {
             DateFormat = "yyyyMMdd_HHmmss"
             IncludeServicePrincipals = $true
         }
+        BackupSettings = @{
+            EnableBackup = $false
+            BackupRoot = "backups"
+            ExportBackupSubfolder = "exports"
+            ConfigBackupSubfolder = "config"
+            EnableExportBackup = $true
+            EnableConfigBackup = $true
+            ExportBackupRetention = 5
+            ConfigBackupRetention = 3
+        }
     }
     
     # Probeer configuratie bestand te laden
@@ -117,15 +127,17 @@ function Get-ScriptConfig {
             $configData = Get-Content $ConfigFile -Raw | ConvertFrom-Json
             Write-Host "✓ Configuratie geladen uit: $ConfigFile" -ForegroundColor Green
             
-            # Override met geladen configuratie
-            if ($configData.ExportSettings) {
-                foreach ($key in $configData.ExportSettings.PSObject.Properties.Name) {
-                    $defaultConfig.ExportSettings[$key] = $configData.ExportSettings.$key
-                }
-            }
-            if ($configData.ReportSettings) {
-                foreach ($key in $configData.ReportSettings.PSObject.Properties.Name) {
-                    $defaultConfig.ReportSettings[$key] = $configData.ReportSettings.$key
+            # Override met geladen configuratie voor alle secties
+            $configSections = @('ExportSettings', 'ReportSettings', 'BackupSettings', 'HTMLSettings', 'PIMSettings', 'FilterSettings', 'ColumnSettings', 'MultiTenantSettings')
+            
+            foreach ($section in $configSections) {
+                if ($configData.$section) {
+                    if (-not $defaultConfig.ContainsKey($section)) {
+                        $defaultConfig[$section] = @{}
+                    }
+                    foreach ($key in $configData.$section.PSObject.Properties.Name) {
+                        $defaultConfig[$section][$key] = $configData.$section.$key
+                    }
                 }
             }
         }
@@ -1698,6 +1710,107 @@ function Get-ExistingExportData {
     }
 }
 
+# Backup functionaliteit
+function Start-BackupProcess {
+    param(
+        [object]$config,
+        [string]$ExportPath
+    )
+    
+    # Backup directories configureren
+    $BackupRoot = $config.BackupSettings.BackupRoot
+    $BackupExportDir = Join-Path $BackupRoot $config.BackupSettings.ExportBackupSubfolder
+    $BackupConfigDir = Join-Path $BackupRoot $config.BackupSettings.ConfigBackupSubfolder
+    
+    # Backup directories aanmaken
+    foreach ($dir in @($BackupRoot, $BackupExportDir, $BackupConfigDir)) {
+        if (-not (Test-Path -Path $dir -PathType Container)) {
+            New-Item -Path $dir -ItemType Directory -Force | Out-Null
+            Write-Host "✓ Backup directory aangemaakt: $dir" -ForegroundColor Green
+        }
+    }
+    
+    # Helper functie voor zip backup met retention
+    function New-ZipBackup {
+        param(
+            [string]$SourcePath,
+            [string]$BackupFolder,
+            [string]$BackupPrefix,
+            [int]$RetentionCount
+        )
+        
+        $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+        $zipName = "$BackupPrefix-$timestamp.zip"
+        $zipPath = Join-Path $BackupFolder $zipName
+        
+        try {
+            if (Test-Path $SourcePath) {
+                Compress-Archive -Path $SourcePath -DestinationPath $zipPath -Force
+                Write-Host "✓ Backup aangemaakt: $zipName" -ForegroundColor Green
+                
+                # Retention: Verwijder oudste backups als limiet overschreden
+                $existingZips = Get-ChildItem -Path $BackupFolder -Filter "$BackupPrefix-*.zip" | Sort-Object LastWriteTime -Descending
+                if ($existingZips.Count -gt $RetentionCount) {
+                    $zipsToRemove = $existingZips | Select-Object -Skip $RetentionCount
+                    foreach ($zipToRemove in $zipsToRemove) {
+                        Remove-Item $zipToRemove.FullName -Force
+                        Write-Host "✓ Oude backup verwijderd: $($zipToRemove.Name)" -ForegroundColor Gray
+                    }
+                }
+            } else {
+                Write-Warning "Backup bron niet gevonden: $SourcePath"
+            }
+        }
+        catch {
+            Write-Error "Fout bij maken backup: $($_.Exception.Message)"
+        }
+    }
+    
+    # Export backup
+    if ($config.BackupSettings.EnableExportBackup -eq $true) {
+        $ExportSource = Join-Path $ExportPath "*"
+        New-ZipBackup -SourcePath $ExportSource -BackupFolder $BackupExportDir -BackupPrefix "exports" -RetentionCount $config.BackupSettings.ExportBackupRetention
+    }
+    
+    # Config/Credentials backup
+    if ($config.BackupSettings.EnableConfigBackup -eq $true) {
+        $ConfigFiles = @()
+        $configPath = Join-Path $PSScriptRoot "config.json"
+        $credentialsPath = Join-Path $PSScriptRoot "credentials.json"
+        
+        if (Test-Path $configPath) { $ConfigFiles += $configPath }
+        if (Test-Path $credentialsPath) { $ConfigFiles += $credentialsPath }
+        
+        if ($ConfigFiles.Count -gt 0) {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $configZipName = "config-$timestamp.zip"
+            $configZipPath = Join-Path $BackupConfigDir $configZipName
+            
+            try {
+                Compress-Archive -Path $ConfigFiles -DestinationPath $configZipPath -Force
+                Write-Host "✓ Config backup aangemaakt: $configZipName" -ForegroundColor Green
+                
+                # Retention voor config backups
+                $existingConfigZips = Get-ChildItem -Path $BackupConfigDir -Filter "config-*.zip" | Sort-Object LastWriteTime -Descending
+                if ($existingConfigZips.Count -gt $config.BackupSettings.ConfigBackupRetention) {
+                    $configZipsToRemove = $existingConfigZips | Select-Object -Skip $config.BackupSettings.ConfigBackupRetention
+                    foreach ($configZipToRemove in $configZipsToRemove) {
+                        Remove-Item $configZipToRemove.FullName -Force
+                        Write-Host "✓ Oude config backup verwijderd: $($configZipToRemove.Name)" -ForegroundColor Gray
+                    }
+                }
+            }
+            catch {
+                Write-Error "Fout bij maken config backup: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Warning "Geen config bestanden gevonden voor backup"
+        }
+    }
+    
+    Write-Host "✓ Backup proces voltooid - Backups opgeslagen in: $BackupRoot" -ForegroundColor Cyan
+}
+
 # Hoofdscript
 function Main {
     Write-Host "=== PIM & Permanent Role Users Report - Multi Tenant ===" -ForegroundColor Magenta
@@ -1776,6 +1889,14 @@ function Main {
         Write-Host "=== Rapport-Only Mode Voltooid ===" -ForegroundColor Green
         Write-Host "HTML Dashboard: $htmlPath" -ForegroundColor Cyan
         Write-Host "Gebaseerd op data van: $($existingData.LastModified)" -ForegroundColor Gray
+        
+        # Backup functionaliteit voor ReportOnly mode
+        if ($config.BackupSettings.EnableBackup -eq $true) {
+            Write-Host ""
+            Write-Host "--- Backup Process ---" -ForegroundColor Yellow
+            Start-BackupProcess -config $config -ExportPath $exportPath
+        }
+        
         Write-Host "Eind tijd: $(Get-Date)" -ForegroundColor Gray
         return
     }
@@ -2094,6 +2215,13 @@ function Main {
                 Write-Host "  - $($_.Name): $($_.Count) Global Admins (Eligible: $eligible, Active: $active, Permanent: $permanent)" -ForegroundColor White
             }
         }
+    }
+    
+    # Backup functionaliteit voor normale mode
+    if ($config.BackupSettings.EnableBackup -eq $true) {
+        Write-Host ""
+        Write-Host "--- Backup Process ---" -ForegroundColor Yellow
+        Start-BackupProcess -config $config -ExportPath $exportPath
     }
     
     Write-Host ""

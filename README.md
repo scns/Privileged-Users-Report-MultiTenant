@@ -4,9 +4,75 @@ Een uitgebreide PowerShell-oplossing voor het analyseren van Privileged Identity
 
 ## 📋 Overzicht
 
-Dit script biedt gedetailleerde rapportage over:
+Dit script biedt gedetailleerde rapportage over:### ReportOnly Vereisten
 
-- **PIM rol-toewijzingen** (Eligible en Active)
+- Minimaal één bestaande export (via normale uitvoering)
+- `*_All_Customers_Full_Report.csv` bestand in export directory
+- Geldige `config.json` voor HTML instellingen
+
+## 💾 Backup Functionaliteit
+
+### Automatische Backups
+
+Het script biedt automatische backup functionaliteit voor:
+
+- **Export bestanden** - Alle CSV rapporten worden gecomprimeerd
+- **Configuratie bestanden** - config.json en credentials.json worden beveiligd
+- **Retention beleid** - Automatische opschoning van oude backups
+
+### Backup Configuratie
+
+```json
+"BackupSettings": {
+    "EnableBackup": true,
+    "BackupRoot": "backups",
+    "ExportBackupSubfolder": "exports", 
+    "ConfigBackupSubfolder": "config",
+    "EnableExportBackup": true,
+    "EnableConfigBackup": true,
+    "ExportBackupRetention": 5,
+    "ConfigBackupRetention": 3
+}
+```
+
+### Backup Instellingen
+
+- **`EnableBackup`** - Hoofdschakelaar voor backup functionaliteit
+- **`BackupRoot`** - Root directory voor alle backups (standaard: "backups")
+- **`ExportBackupSubfolder`** - Subdirectory voor export backups
+- **`ConfigBackupSubfolder`** - Subdirectory voor configuratie backups
+- **`EnableExportBackup`** - Export bestanden backuppen (true/false)
+- **`EnableConfigBackup`** - Configuratie bestanden backuppen (true/false)
+- **`ExportBackupRetention`** - Aantal export backups te behouden (standaard: 5)
+- **`ConfigBackupRetention`** - Aantal config backups te behouden (standaard: 3)
+
+### Backup Voordelen
+
+✅ **Automatisch** - Backups worden automatisch aangemaakt na elke run
+
+✅ **Retention** - Oude backups worden automatisch verwijderd
+
+✅ **Gecomprimeerd** - ZIP formaat voor efficiënte opslag
+
+✅ **Timestamped** - Duidelijke naamgeving met datum/tijd
+
+✅ **Gefilterd** - Alleen relevante bestanden worden gebackupt
+
+### Backup Structuur
+
+```
+backups/
+├── exports/
+│   ├── exports-20250817_200746.zip
+│   ├── exports-20250816_154321.zip
+│   └── ...
+└── config/
+    ├── config-20250817_200752.zip
+    ├── config-20250816_154325.zip
+    └── ...
+```
+
+## 🔧 Troubleshooting*PIM rol-toewijzingen** (Eligible en Active)
 - **Permanente roltoewijzingen** (niet via PIM)
 - **Groepslidmaatschap** voor privileged rollen
 - **Multi-tenant ondersteuning** voor MSP's en grote organisaties
@@ -141,6 +207,16 @@ Pas rapportage-instellingen aan:
     "HTMLSettings": {
         "GenerateHTMLDashboard": true,
         "AutoOpenHTMLReport": true
+    },
+    "BackupSettings": {
+        "EnableBackup": true,
+        "BackupRoot": "backups",
+        "ExportBackupSubfolder": "exports",
+        "ConfigBackupSubfolder": "config",
+        "EnableExportBackup": true,
+        "EnableConfigBackup": true,
+        "ExportBackupRetention": 5,
+        "ConfigBackupRetention": 3
     }
 }
 ```

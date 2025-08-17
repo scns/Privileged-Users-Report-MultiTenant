@@ -14,5 +14,15 @@
     "HTMLSettings": {
         "GenerateHTMLDashboard": true,
         "AutoOpenHTMLReport": true
+    },
+    "BackupSettings": {
+        "EnableBackup": true,
+        "BackupRoot": "backups",
+        "ExportBackupSubfolder": "exports",
+        "ConfigBackupSubfolder": "config",
+        "EnableExportBackup": true,
+        "EnableConfigBackup": true,
+        "ExportBackupRetention": 5,
+        "ConfigBackupRetention": 3
     }
 }

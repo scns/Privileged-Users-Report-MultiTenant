@@ -475,10 +475,10 @@ function Get-PIMRoleAssignments {
                     $isPermanent = $false
                     
                     # Als er geen eindtijd is of eindtijd is ver in de toekomst (> 1 jaar), dan is het permanent
-                    if (-not $assignment.ScheduleInfo.Expiration.EndDateTime -or 
-                        $assignment.ScheduleInfo.Expiration.EndDateTime -eq $null -or
-                        $assignment.ScheduleInfo.Expiration.EndDateTime -eq "" -or
-                        $assignment.ScheduleInfo.Expiration.EndDateTime -gt (Get-Date).AddYears(1)) {
+                    $endDateTime = $assignment.ScheduleInfo.Expiration.EndDateTime
+                    if (-not $endDateTime -or 
+                        [string]::IsNullOrEmpty($endDateTime) -or
+                        $endDateTime -gt (Get-Date).AddYears(1)) {
                         $assignmentType = "Permanent"
                         $isPermanent = $true
                     }

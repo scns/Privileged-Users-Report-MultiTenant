@@ -470,6 +470,19 @@ function Get-PIMRoleAssignments {
                     # Haal gebruiker informatie op
                     $principalInfo = Get-PrincipalInfo -PrincipalId $assignment.PrincipalId
                     
+                    # Bepaal of dit een permanente of tijdelijke (PIM) active assignment is
+                    $assignmentType = "Active"
+                    $isPermanent = $false
+                    
+                    # Als er geen eindtijd is of eindtijd is ver in de toekomst (> 1 jaar), dan is het permanent
+                    if (-not $assignment.ScheduleInfo.Expiration.EndDateTime -or 
+                        $assignment.ScheduleInfo.Expiration.EndDateTime -eq $null -or
+                        $assignment.ScheduleInfo.Expiration.EndDateTime -eq "" -or
+                        $assignment.ScheduleInfo.Expiration.EndDateTime -gt (Get-Date).AddYears(1)) {
+                        $assignmentType = "Permanent"
+                        $isPermanent = $true
+                    }
+                    
                     $pimInfo = [PSCustomObject]@{
                         Customer = $CustomerName
                         TenantId = $TenantId
@@ -481,18 +494,18 @@ function Get-PIMRoleAssignments {
                         RoleName = $roleDefinition.DisplayName
                         RoleId = $roleDefinition.Id
                         RoleTemplateId = $roleDefinition.TemplateId
-                        AssignmentType = "Active"
+                        AssignmentType = $assignmentType
                         Status = $assignment.Status
                         CreatedDateTime = $assignment.CreatedDateTime
                         StartDateTime = $assignment.ScheduleInfo.StartDateTime
-                        EndDateTime = $assignment.ScheduleInfo.Expiration.EndDateTime
+                        EndDateTime = if ($isPermanent) { "Never" } else { $assignment.ScheduleInfo.Expiration.EndDateTime }
                         DirectoryScope = $assignment.DirectoryScopeId
                         AssignmentId = $assignment.Id
                         AccountEnabled = $principalInfo.AccountEnabled
                         Department = $principalInfo.Department
                         JobTitle = $principalInfo.JobTitle
                         CompanyName = $principalInfo.CompanyName
-                        IsPIMManaged = $true
+                        IsPIMManaged = if ($isPermanent) { $false } else { $true }
                         ViaGroup = "N/A"
                         IsGroupMember = $false
                     }
@@ -501,9 +514,11 @@ function Get-PIMRoleAssignments {
                     # Als dit een groep is, haal dan ook de leden op
                     if ($principalInfo.UserType -eq "Group") {
                         $startDate = if ($assignment.ScheduleInfo.StartDateTime) { $assignment.ScheduleInfo.StartDateTime } else { [DateTime]::MinValue }
-                        $endDate = if ($assignment.ScheduleInfo.Expiration.EndDateTime) { $assignment.ScheduleInfo.Expiration.EndDateTime } else { [DateTime]::MaxValue }
+                        $endDate = if ($isPermanent) { [DateTime]::MaxValue } else { 
+                            if ($assignment.ScheduleInfo.Expiration.EndDateTime) { $assignment.ScheduleInfo.Expiration.EndDateTime } else { [DateTime]::MaxValue }
+                        }
                         
-                        $groupMembers = Get-GroupMembers -GroupId $assignment.PrincipalId -Customer $CustomerName -GroupName $principalInfo.DisplayName -RoleName $roleDefinition.DisplayName -AssignmentType "Active" -AssignmentState $assignment.Status -StartDateTime $startDate -EndDateTime $endDate
+                        $groupMembers = Get-GroupMembers -GroupId $assignment.PrincipalId -Customer $CustomerName -GroupName $principalInfo.DisplayName -RoleName $roleDefinition.DisplayName -AssignmentType $assignmentType -AssignmentState $assignment.Status -StartDateTime $startDate -EndDateTime $endDate
                         foreach ($member in $groupMembers) {
                             $memberPimInfo = [PSCustomObject]@{
                                 Customer = $member.Customer
@@ -527,7 +542,7 @@ function Get-PIMRoleAssignments {
                                 Department = $member.Department
                                 JobTitle = $member.JobTitle
                                 CompanyName = $member.CompanyName
-                                IsPIMManaged = $true
+                                IsPIMManaged = if ($member.AssignmentType -eq "Permanent") { $false } else { $true }
                                 ViaGroup = $member.ViaGroup
                                 IsGroupMember = $member.IsGroupMember
                             }
@@ -564,9 +579,10 @@ function Get-PermanentRoleAssignments {
     $allPermanentAssignments = @()
     
     try {
-        Write-Host "Ophalen van permanente (non-PIM) rol-toewijzingen voor $CustomerName..." -ForegroundColor Yellow
+        Write-Host "Ophalen van klassieke (non-PIM) rol-toewijzingen voor $CustomerName..." -ForegroundColor Yellow
+        Write-Host "  (Permanente rollen zonder eindtijd worden al gedetecteerd in PIM Active assignments)" -ForegroundColor Gray
         
-        # Method 1: Haal klassieke directory role assignments op
+        # Method 1: Haal klassieke directory role assignments op (alleen als ze NIET in PIM zitten)
         Write-Host "  - Ophalen van klassieke directory role assignments..." -ForegroundColor Cyan
         try {
             $directoryRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -All -ErrorAction SilentlyContinue
@@ -578,13 +594,15 @@ function Get-PermanentRoleAssignments {
                     $roleDefinition = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId -ErrorAction SilentlyContinue
                     if (-not $roleDefinition) { continue }
                     
-                    # Check of dit assignment NIET via PIM loopt
+                    # Check of dit assignment AL via PIM loopt (dus NIET klassiek permanent)
                     $isPIMManaged = $false
                     try {
+                        # Kijk of er PIM eligible schedules zijn
                         $pimEligible = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -Filter "principalId eq '$($assignment.PrincipalId)' and roleDefinitionId eq '$($assignment.RoleDefinitionId)'" -ErrorAction SilentlyContinue
-                        $pimActive = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -Filter "principalId eq '$($assignment.PrincipalId)' and roleDefinitionId eq '$($assignment.RoleDefinitionId)'" -ErrorAction SilentlyContinue
+                        # Kijk of er PIM assignment schedules zijn (ook permanente)
+                        $pimAssignment = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -Filter "principalId eq '$($assignment.PrincipalId)' and roleDefinitionId eq '$($assignment.RoleDefinitionId)'" -ErrorAction SilentlyContinue
                         
-                        if (($pimEligible | Measure-Object).Count -gt 0 -or ($pimActive | Measure-Object).Count -gt 0) {
+                        if (($pimEligible | Measure-Object).Count -gt 0 -or ($pimAssignment | Measure-Object).Count -gt 0) {
                             $isPIMManaged = $true
                         }
                     }
@@ -592,9 +610,9 @@ function Get-PermanentRoleAssignments {
                         $isPIMManaged = $false
                     }
                     
-                    # Alleen verwerken als het NIET PIM-managed is
+                    # Alleen verwerken als het NIET PIM-managed is (dus ouderwetse klassieke assignment)
                     if (-not $isPIMManaged) {
-                        Write-Host "      - Permanente rol gevonden: $($roleDefinition.DisplayName) voor principal $($assignment.PrincipalId)" -ForegroundColor Green
+                        Write-Host "      - Klassieke permanente rol gevonden: $($roleDefinition.DisplayName) voor principal $($assignment.PrincipalId)" -ForegroundColor Green
                         
                         # Haal gebruiker/principal informatie op
                         $principalInfo = Get-PrincipalInfo -PrincipalId $assignment.PrincipalId

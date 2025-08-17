@@ -1635,7 +1635,7 @@ function New-HTMLDashboard {
 "@
         
         # Schrijf HTML naar bestand
-        $htmlPath = Join-Path $ExportPath "${DatePrefix}_PIM_Role_Dashboard.html"
+        $htmlPath = Join-Path $ExportPath "PIM_Role_Dashboard.html"
         Set-Content -Path $htmlPath -Value $html -Encoding UTF8
         
         return $htmlPath

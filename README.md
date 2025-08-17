@@ -204,7 +204,7 @@ Alle bestanden gebruiken het format: `YYYYMMDD_Customer_ReportType.csv`
 - `20250816_All_Customers_Full_Report.csv` - Alle klanten gecombineerd
 - `20250816_All_Customers_High_Privilege.csv` - High-privilege rollen
 - `20250816_All_Customers_PIM_vs_Permanent_Comparison.csv` - Vergelijking
-- `20250816_PIM_Role_Dashboard.html` - **Interactief HTML Dashboard**
+- `PIM_Role_Dashboard.html` - **Interactief HTML Dashboard**
 
 ## 🎨 HTML Dashboard Features
 

@@ -1319,7 +1319,7 @@ function New-HTMLDashboard {
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <title>PIM & Role Assignment Dashboard Multitenant</title>
+    <title>PIM & Role Assignment MultiTenant Dashboard</title>
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css"/>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -1508,7 +1508,7 @@ function New-HTMLDashboard {
 <body>
 <div class="container">
     <div class="header">
-        <h1><i class="fa-solid fa-shield-halved"></i> PIM & Role Assignment Dashboard</h1>
+        <h1><i class="fa-solid fa-shield-halved"></i> PIM & Role Assignment Multitenant Dashboard</h1>
         <button id="darkModeToggle"><i class="fa-solid fa-moon"></i> Dark mode</button>
     </div>
 

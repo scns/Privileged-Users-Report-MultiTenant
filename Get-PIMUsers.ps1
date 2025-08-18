@@ -722,6 +722,7 @@ function Compare-PIMExports {
     
     try {
         Write-Host "Detecteren van wijzigingen ten opzichte van vorige export..." -ForegroundColor Yellow
+        Write-Host "  - Normale PIM activaties (Eligible <-> Active) worden niet getoond als wijzigingen" -ForegroundColor Gray
         
         # Zoek naar vorige export bestanden (oudere datums dan huidige)
         $allFiles = Get-ChildItem -Path $ExportPath -Filter "*_All_Customers_Full_Report.csv" | 
@@ -818,29 +819,35 @@ function Compare-PIMExports {
             }
         }
         
-        # Detecteer gewijzigde assignment types (bijv. Eligible -> Active)
+        # Detecteer gewijzigde assignment types (exclusief normale PIM activaties/deactivaties)
         foreach ($key in $currentLookup.Keys) {
             if ($previousLookup.ContainsKey($key)) {
                 $current = $currentLookup[$key]
                 $previous = $previousLookup[$key]
                 
                 if ($current.AssignmentType -ne $previous.AssignmentType) {
-                    $change = [PSCustomObject]@{
-                        ChangeType = "MODIFIED"
-                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                        Customer = $current.Customer
-                        DisplayName = $current.DisplayName
-                        UserPrincipalName = $current.UserPrincipalName
-                        RoleName = $current.RoleName
-                        AssignmentType = $current.AssignmentType
-                        UserType = $current.UserType
-                        ViaGroup = $current.ViaGroup
-                        PreviousValue = $previous.AssignmentType
-                        CurrentValue = $current.AssignmentType
-                        Description = "Assignment type gewijzigd van $($previous.AssignmentType) naar $($current.AssignmentType)"
-                        PrincipalId = $current.PrincipalId
+                    # Skip normale PIM activaties/deactivaties (Eligible <-> Active)
+                    $isPIMActivation = ($previous.AssignmentType -eq "Eligible" -and $current.AssignmentType -eq "Active") -or
+                                      ($previous.AssignmentType -eq "Active" -and $current.AssignmentType -eq "Eligible")
+                    
+                    if (-not $isPIMActivation) {
+                        $change = [PSCustomObject]@{
+                            ChangeType = "MODIFIED"
+                            Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                            Customer = $current.Customer
+                            DisplayName = $current.DisplayName
+                            UserPrincipalName = $current.UserPrincipalName
+                            RoleName = $current.RoleName
+                            AssignmentType = $current.AssignmentType
+                            UserType = $current.UserType
+                            ViaGroup = $current.ViaGroup
+                            PreviousValue = $previous.AssignmentType
+                            CurrentValue = $current.AssignmentType
+                            Description = "Assignment type structureel gewijzigd van $($previous.AssignmentType) naar $($current.AssignmentType)"
+                            PrincipalId = $current.PrincipalId
+                        }
+                        $changes += $change
                     }
-                    $changes += $change
                 }
                 
                 # Check voor wijzigingen in groepstoewijzing

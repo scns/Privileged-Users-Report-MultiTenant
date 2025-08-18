@@ -58,6 +58,62 @@ Het script biedt automatische backup functionaliteit voor:
 
 ✅ **Gefilterd** - Alleen relevante bestanden worden gebackupt
 
+## 🔄 Wijzigingsdetectie
+
+### Automatische Change Detection
+
+Het script bevat een geavanceerd systeem voor het detecteren van wijzigingen in roltoewijzingen tussen verschillende uitvoeringen. Dit helpt bij het monitoren van security changes en compliance tracking.
+
+### Intelligente PIM Filtering
+
+Een belangrijk kenmerk van de wijzigingsdetectie is dat **normale PIM-activaties niet worden gerapporteerd als wijzigingen**:
+
+- **Eligible → Active**: Wanneer een gebruiker een PIM rol activeert
+- **Active → Eligible**: Wanneer een PIM rol weer deactiveert/verloopt
+- **Eligible → Eligible**: Hernieuwing van eligible status
+
+Deze overgangen worden automatisch uitgefilterd omdat ze deel uitmaken van normale PIM-operaties en niet wijzen op structurele veranderingen in de roltoewijzingen.
+
+### Wel Gerapporteerde Wijzigingen
+
+Het systeem rapporteert wel de volgende belangrijke wijzigingen:
+
+- **Nieuwe roltoewijzingen**: Volledig nieuwe toegang voor gebruikers
+- **Verwijderde roltoewijzingen**: Intrekking van toegang
+- **Permanente rol wijzigingen**: Veranderingen in permanent toegewezen rollen
+- **Groepslidmaatschap veranderingen**: Wijzigingen via security groups
+- **Assignment Type wijzigingen**: Van Permanent naar PIM of vice versa
+
+### Change Report Output
+
+```csv
+# Voorbeeld uitvoer wijzigingsrapport
+User,Role,ChangeType,PreviousState,CurrentState,Tenant,Timestamp
+john.doe@company.com,Global Administrator,NEW,None,Permanent,Customer1,2025-08-18T10:30:00
+jane.smith@company.com,Security Administrator,REMOVED,PIM Eligible,None,Customer2,2025-08-18T10:30:00
+```
+
+### Configuratie
+
+Wijzigingsdetectie is automatisch ingeschakeld en vereist geen extra configuratie. Het systeem:
+
+- Vergelijkt automatisch met de vorige export
+- Genereert een `Changes_Report.csv` bestand
+- Toont samenvattingsstatistieken in de console
+- Integreert change information in het HTML dashboard
+
+### Wijzigingsdetectie Voordelen
+
+✅ **Security Monitoring** - Detecteert ongeautoriseerde wijzigingen
+
+✅ **Compliance Tracking** - Audit trail voor roltoewijzingen
+
+✅ **Intelligent Filtering** - Onderscheidt tussen operationele en structurele wijzigingen
+
+✅ **Automated Reporting** - Geen handmatige vergelijking nodig
+
+✅ **Historical Context** - Behoudt overzicht van veranderingen over tijd
+
 ### Backup Structuur
 
 ```text

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.5.2
 
 <#
 .SYNOPSIS
@@ -32,7 +32,7 @@
     PowerShell Script voor PIM & Permanent Role Rapportage
     
 .VERSIE
-    1.0
+    0.1
 #>
 
 param(
@@ -42,7 +42,7 @@ param(
 )
 
 # Versie informatie
-$ProjectVersion = "1.0"
+$ProjectVersion = "0.1"
 $LastEditDate = "2025-08-16"
 
 # Functie voor het controleren en installeren van PowerShell modules
@@ -1310,7 +1310,7 @@ function New-HTMLDashboard {
 '@
         
         $lastRunDate = Get-Date -Format "dd-MM-yyyy HH:mm"
-        $projectVersion = "1.0"
+        $projectVersion = "0.1"
         $lastEditDate = Get-Date -Format "yyyy-MM-dd"
         
         # Bouw het complete HTML document
@@ -1583,7 +1583,7 @@ function New-HTMLDashboard {
     
     <div class="footer">
         Powered by <strong>PIM & Role Assignment MultiTenant Dashboard</strong> 
-        <span style="font-weight:normal;color:#888;">v$projectVersion $lastEditDate</span> 
+        <span style="font-weight:normal;color:#888;">v$projectVersion $lastEditDate | By Maarten Schmeitz</span> 
         | Generated on $lastRunDate
     </div>
 </div>

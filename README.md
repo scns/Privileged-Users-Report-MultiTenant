@@ -541,4 +541,4 @@ Dit project is gelicenseerd onder de [MIT License](LICENSE).
 
 🔒 **Security**: Bewaar credential bestanden veilig en deel ze nooit in version control.
 
-📊 **Analytics**: Gebruik de HTML dashboard voor real-time insights en de CSV bestanden voor uitgebreide analyse. Privileged-Uses-Report-MultiTenant
+📊 **Analytics**: Gebruik de HTML dashboard voor real-time insights en de CSV bestanden voor uitgebreide analyse.

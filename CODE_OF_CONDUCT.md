@@ -1,6 +1,6 @@
 # Gedragscode (Code of Conduct)
 
-**Project:** [Windows-Update-Report-MultiTenant](https://github.com/scns/Windows-Update-Report-MultiTenant)
+**Project:** [Privileged-Users-Report-MultiTenant](https://github.com/scns/Privileged-Users-Report-MultiTenant)
 
 Deze gedragscode is bedoeld om een gastvrije, veilige en productieve omgeving te creëren voor iedereen die met dit technische open‑sourceproject werkt. De code geldt in alle projectruimtes: repository, issues, pull requests, Discussions, wiki, documentatie en communitykanalen.
 

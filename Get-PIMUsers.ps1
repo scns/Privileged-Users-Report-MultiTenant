@@ -786,7 +786,6 @@ function Compare-PIMExports {
                     RoleName = $record.RoleName
                     AssignmentType = $record.AssignmentType
                     UserType = $record.UserType
-                    ViaGroup = $record.ViaGroup
                     PreviousValue = "N/A"
                     CurrentValue = "$($record.AssignmentType)"
                     Description = "Nieuwe rol toewijzing gedetecteerd"
@@ -809,7 +808,6 @@ function Compare-PIMExports {
                     RoleName = $record.RoleName
                     AssignmentType = $record.AssignmentType
                     UserType = $record.UserType
-                    ViaGroup = $record.ViaGroup
                     PreviousValue = "$($record.AssignmentType)"
                     CurrentValue = "N/A"
                     Description = "Rol toewijzing verwijderd"
@@ -840,7 +838,6 @@ function Compare-PIMExports {
                             RoleName = $current.RoleName
                             AssignmentType = $current.AssignmentType
                             UserType = $current.UserType
-                            ViaGroup = $current.ViaGroup
                             PreviousValue = $previous.AssignmentType
                             CurrentValue = $current.AssignmentType
                             Description = "Assignment type structureel gewijzigd van $($previous.AssignmentType) naar $($current.AssignmentType)"
@@ -848,26 +845,6 @@ function Compare-PIMExports {
                         }
                         $changes += $change
                     }
-                }
-                
-                # Check voor wijzigingen in groepstoewijzing
-                if ($current.ViaGroup -ne $previous.ViaGroup) {
-                    $change = [PSCustomObject]@{
-                        ChangeType = "MODIFIED"
-                        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-                        Customer = $current.Customer
-                        DisplayName = $current.DisplayName
-                        UserPrincipalName = $current.UserPrincipalName
-                        RoleName = $current.RoleName
-                        AssignmentType = $current.AssignmentType
-                        UserType = $current.UserType
-                        ViaGroup = $current.ViaGroup
-                        PreviousValue = $previous.ViaGroup
-                        CurrentValue = $current.ViaGroup
-                        Description = "Groepstoewijzing gewijzigd van '$($previous.ViaGroup)' naar '$($current.ViaGroup)'"
-                        PrincipalId = $current.PrincipalId
-                    }
-                    $changes += $change
                 }
             }
         }

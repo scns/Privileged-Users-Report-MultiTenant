@@ -269,6 +269,7 @@ function Get-GroupMembers {
                 Department = $memberInfo.Department
                 JobTitle = $memberInfo.JobTitle
                 CompanyName = $memberInfo.CompanyName
+                LastLoginDate = $memberInfo.LastLoginDate
                 PrincipalId = $member.Id
                 RoleName = $RoleName
                 AssignmentType = $AssignmentType
@@ -300,6 +301,8 @@ function Get-PrincipalInfo {
         [string]$PrincipalId
     )
     
+    Write-Host "        → Ophalen principal info voor: $PrincipalId" -ForegroundColor DarkGray
+    
     $result = @{
         UserType = "Unknown"
         DisplayName = "Unknown"
@@ -310,6 +313,7 @@ function Get-PrincipalInfo {
         Department = "Unknown"
         JobTitle = "Unknown"
         CompanyName = "Unknown"
+        LastLoginDate = "N/A"
     }
     
     if (-not $PrincipalId) {
@@ -319,6 +323,8 @@ function Get-PrincipalInfo {
     try {
         # Probeer als gebruiker
         try {
+            # Eerst proberen de basis gebruikersgegevens op te halen
+            Write-Host "          → Proberen als gebruiker..." -ForegroundColor DarkGray
             $userDetails = Get-MgUser -UserId $PrincipalId -ErrorAction Stop
             $result.UserType = "User"
             $result.DisplayName = $userDetails.DisplayName
@@ -329,11 +335,31 @@ function Get-PrincipalInfo {
             $result.Department = $userDetails.Department
             $result.JobTitle = $userDetails.JobTitle
             $result.CompanyName = $userDetails.CompanyName
+            
+            # Probeer sign-in activity apart op te halen (dit kan falen door beperkte rechten)
+            try {
+                Write-Host "          → Ophalen sign-in activity..." -ForegroundColor DarkGray
+                $signInActivity = Get-MgUser -UserId $PrincipalId -Property "SignInActivity" -ErrorAction Stop
+                if ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastSignInDateTime) {
+                    $result.LastLoginDate = $signInActivity.SignInActivity.LastSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                } elseif ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime) {
+                    $result.LastLoginDate = $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                } else {
+                    $result.LastLoginDate = "Never"
+                }
+            }
+            catch {
+                # Als sign-in activity niet kan worden opgehaald, gebruik "N/A"
+                Write-Host "          → Sign-in activity niet beschikbaar" -ForegroundColor DarkGray
+                $result.LastLoginDate = "N/A"
+            }
+            
             return $result
         }
         catch {
             # Probeer als service principal
             try {
+                Write-Host "          → Proberen als service principal..." -ForegroundColor DarkGray
                 $spDetails = Get-MgServicePrincipal -ServicePrincipalId $PrincipalId -ErrorAction Stop
                 $result.UserType = "ServicePrincipal"
                 $result.DisplayName = $spDetails.DisplayName
@@ -341,11 +367,13 @@ function Get-PrincipalInfo {
                 $result.Email = "N/A"
                 $result.AccountEnabled = $spDetails.AccountEnabled
                 $result.CreatedDateTime = $spDetails.CreatedDateTime
+                $result.LastLoginDate = "N/A"
                 return $result
             }
             catch {
                 # Probeer als groep
                 try {
+                    Write-Host "          → Proberen als groep..." -ForegroundColor DarkGray
                     $groupDetails = Get-MgGroup -GroupId $PrincipalId -ErrorAction Stop
                     $result.UserType = "Group"
                     $result.DisplayName = $groupDetails.DisplayName
@@ -353,6 +381,7 @@ function Get-PrincipalInfo {
                     $result.Email = $groupDetails.Mail
                     $result.AccountEnabled = $true
                     $result.CreatedDateTime = $groupDetails.CreatedDateTime
+                    $result.LastLoginDate = "N/A"
                     return $result
                 }
                 catch {
@@ -383,13 +412,26 @@ function Get-PIMRoleAssignments {
         # Haal alle eligible role assignments op (PIM candidates)
         Write-Host "  - Ophalen van eligible assignments..." -ForegroundColor Cyan
         try {
+            Write-Host "    → API call: Get-MgRoleManagementDirectoryRoleEligibilitySchedule..." -ForegroundColor Gray
             $eligibleAssignments = Get-MgRoleManagementDirectoryRoleEligibilitySchedule -All -ErrorAction SilentlyContinue
+            Write-Host "    → Gevonden: $($eligibleAssignments.Count) eligible assignments" -ForegroundColor Gray
             
+            $processedCount = 0
             foreach ($assignment in $eligibleAssignments) {
+                $processedCount++
+                if ($processedCount % 10 -eq 0 -or $processedCount -eq 1) {
+                    Write-Host "    → Verwerken assignment $processedCount van $($eligibleAssignments.Count)..." -ForegroundColor Gray
+                }
+                
                 try {
                     # Haal rol informatie op
                     $roleDefinition = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId -ErrorAction SilentlyContinue
-                    if (-not $roleDefinition) { continue }
+                    if (-not $roleDefinition) { 
+                        Write-Host "      ⚠ Kon rol definitie niet ophalen voor ID: $($assignment.RoleDefinitionId)" -ForegroundColor Yellow
+                        continue 
+                    }
+                    
+                    Write-Host "      → Verwerken rol: $($roleDefinition.DisplayName) voor principal: $($assignment.PrincipalId)" -ForegroundColor DarkGray
                     
                     # Haal gebruiker informatie op
                     $principalInfo = Get-PrincipalInfo -PrincipalId $assignment.PrincipalId
@@ -416,6 +458,7 @@ function Get-PIMRoleAssignments {
                         Department = $principalInfo.Department
                         JobTitle = $principalInfo.JobTitle
                         CompanyName = $principalInfo.CompanyName
+                        LastLoginDate = $principalInfo.LastLoginDate
                         IsPIMManaged = $true
                         ViaGroup = "N/A"
                         IsGroupMember = $false
@@ -451,6 +494,7 @@ function Get-PIMRoleAssignments {
                                 Department = $member.Department
                                 JobTitle = $member.JobTitle
                                 CompanyName = $member.CompanyName
+                                LastLoginDate = $member.LastLoginDate
                                 IsPIMManaged = $true
                                 ViaGroup = $member.ViaGroup
                                 IsGroupMember = $member.IsGroupMember
@@ -471,13 +515,26 @@ function Get-PIMRoleAssignments {
         # Haal alle active role assignments op (permanent assignments via PIM)
         Write-Host "  - Ophalen van active assignments..." -ForegroundColor Cyan
         try {
+            Write-Host "    → API call: Get-MgRoleManagementDirectoryRoleAssignmentSchedule..." -ForegroundColor Gray
             $activeAssignments = Get-MgRoleManagementDirectoryRoleAssignmentSchedule -All -ErrorAction SilentlyContinue
+            Write-Host "    → Gevonden: $($activeAssignments.Count) active assignments" -ForegroundColor Gray
             
+            $processedCount = 0
             foreach ($assignment in $activeAssignments) {
+                $processedCount++
+                if ($processedCount % 10 -eq 0 -or $processedCount -eq 1) {
+                    Write-Host "    → Verwerken assignment $processedCount van $($activeAssignments.Count)..." -ForegroundColor Gray
+                }
+                
                 try {
                     # Haal rol informatie op
                     $roleDefinition = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId -ErrorAction SilentlyContinue
-                    if (-not $roleDefinition) { continue }
+                    if (-not $roleDefinition) { 
+                        Write-Host "      ⚠ Kon rol definitie niet ophalen voor ID: $($assignment.RoleDefinitionId)" -ForegroundColor Yellow
+                        continue 
+                    }
+                    
+                    Write-Host "      → Verwerken rol: $($roleDefinition.DisplayName) voor principal: $($assignment.PrincipalId)" -ForegroundColor DarkGray
                     
                     # Haal gebruiker informatie op
                     $principalInfo = Get-PrincipalInfo -PrincipalId $assignment.PrincipalId
@@ -517,6 +574,7 @@ function Get-PIMRoleAssignments {
                         Department = $principalInfo.Department
                         JobTitle = $principalInfo.JobTitle
                         CompanyName = $principalInfo.CompanyName
+                        LastLoginDate = $principalInfo.LastLoginDate
                         IsPIMManaged = if ($isPermanent) { $false } else { $true }
                         ViaGroup = "N/A"
                         IsGroupMember = $false
@@ -554,6 +612,7 @@ function Get-PIMRoleAssignments {
                                 Department = $member.Department
                                 JobTitle = $member.JobTitle
                                 CompanyName = $member.CompanyName
+                                LastLoginDate = $member.LastLoginDate
                                 IsPIMManaged = if ($member.AssignmentType -eq "Permanent") { $false } else { $true }
                                 ViaGroup = $member.ViaGroup
                                 IsGroupMember = $member.IsGroupMember
@@ -596,15 +655,27 @@ function Get-PermanentRoleAssignments {
         
         # Method 1: Haal klassieke directory role assignments op (alleen als ze NIET in PIM zitten)
         Write-Host "  - Ophalen van klassieke directory role assignments..." -ForegroundColor Cyan
+        Write-Host "    → API call: Get-MgDirectoryRoleAssignment..." -ForegroundColor Gray
         try {
             $directoryRoleAssignments = Get-MgRoleManagementDirectoryRoleAssignment -All -ErrorAction SilentlyContinue
-            Write-Host "    - Gevonden $($directoryRoleAssignments.Count) directory role assignments" -ForegroundColor DarkCyan
+            Write-Host "    → Gevonden: $($directoryRoleAssignments.Count) directory role assignments" -ForegroundColor Gray
             
+            $processedCount = 0
             foreach ($assignment in $directoryRoleAssignments) {
+                $processedCount++
+                if ($processedCount % 10 -eq 0 -or $processedCount -eq 1) {
+                    Write-Host "    → Verwerken assignment $processedCount van $($directoryRoleAssignments.Count)..." -ForegroundColor Gray
+                }
+                
                 try {
                     # Haal rol informatie op
                     $roleDefinition = Get-MgRoleManagementDirectoryRoleDefinition -UnifiedRoleDefinitionId $assignment.RoleDefinitionId -ErrorAction SilentlyContinue
-                    if (-not $roleDefinition) { continue }
+                    if (-not $roleDefinition) { 
+                        Write-Host "      ⚠ Kon rol definitie niet ophalen voor ID: $($assignment.RoleDefinitionId)" -ForegroundColor Yellow
+                        continue 
+                    }
+                    
+                    Write-Host "      → Controleren of rol $($roleDefinition.DisplayName) klassiek permanent is..." -ForegroundColor DarkGray
                     
                     # Check of dit assignment AL via PIM loopt (dus NIET klassiek permanent)
                     $isPIMManaged = $false
@@ -651,6 +722,7 @@ function Get-PermanentRoleAssignments {
                             Department = $principalInfo.Department
                             JobTitle = $principalInfo.JobTitle
                             CompanyName = $principalInfo.CompanyName
+                            LastLoginDate = $principalInfo.LastLoginDate
                             IsPIMManaged = $false
                             ViaGroup = "N/A"
                             IsGroupMember = $false
@@ -683,6 +755,7 @@ function Get-PermanentRoleAssignments {
                                     Department = $groupMember.Department
                                     JobTitle = $groupMember.JobTitle
                                     CompanyName = $groupMember.CompanyName
+                                    LastLoginDate = $groupMember.LastLoginDate
                                     IsPIMManaged = $false
                                     ViaGroup = $groupMember.ViaGroup
                                     IsGroupMember = $groupMember.IsGroupMember
@@ -1102,6 +1175,7 @@ function New-HTMLDashboard {
                     <td>$($assignment.UserType)</td>
                     <td>$($assignment.EmailAddress)</td>
                     <td>$($assignment.AccountEnabled)</td>
+                    <td>$($assignment.LastLoginDate)</td>
                     <td style="$viaGroupColor">$viaGroupText</td>
                     <td>$($assignment.Department)</td>
                     <td>$($assignment.JobTitle)</td>
@@ -1195,6 +1269,7 @@ function New-HTMLDashboard {
                     <th>User Type</th>
                     <th>Email</th>
                     <th>Enabled</th>
+                    <th>Last Login</th>
                     <th>Via Groep</th>
                     <th>Department</th>
                     <th>Job Title</th>
@@ -1998,9 +2073,13 @@ function Main {
     $successfulTenants = 0
     $failedTenants = 0
     
+    $totalTenants = $credentials.Count
+    $currentTenant = 0
+    
     foreach ($tenant in $credentials) {
+        $currentTenant++
         Write-Host ""
-        Write-Host "--- Verwerken van $($tenant.customername) ---" -ForegroundColor White
+        Write-Host "--- Verwerken van $($tenant.customername) ($currentTenant van $totalTenants) ---" -ForegroundColor White
         
         # Verbind met tenant (handle both naming conventions)
         $clientId = if ($tenant.ClientId) { $tenant.ClientId } else { $tenant.ClientID }
@@ -2008,27 +2087,35 @@ function Main {
         $tenantId = if ($tenant.TenantId) { $tenant.TenantId } else { $tenant.TenantID }
         $customerName = if ($tenant.CustomerName) { $tenant.CustomerName } else { $tenant.customername }
         
+        Write-Host "→ Verbinden met tenant: $tenantId" -ForegroundColor Cyan
         $connected = Connect-MicrosoftGraph -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId
         
         if ($connected) {
+            Write-Host "✓ Verbinding succesvol!" -ForegroundColor Green
+            
             # Haal PIM rol-toewijzingen op
             $pimAssignments = Get-PIMRoleAssignments -TenantId $tenantId -CustomerName $customerName
+            Write-Host "✓ PIM assignments opgehaald: $($pimAssignments.Count) records" -ForegroundColor Green
             $allResults += $pimAssignments
             
             # Haal permanente (non-PIM) rol-toewijzingen op
             $permanentAssignments = Get-PermanentRoleAssignments -TenantId $tenantId -CustomerName $customerName
+            Write-Host "✓ Permanente assignments opgehaald: $($permanentAssignments.Count) records" -ForegroundColor Green
             $allResults += $permanentAssignments
             
             $successfulTenants++
+            Write-Host "✓ Klant $customerName voltooid!" -ForegroundColor Green
             
             # Disconnect voor de volgende tenant
             try {
+                Write-Host "→ Verbreken verbinding..." -ForegroundColor Cyan
                 Disconnect-MgGraph | Out-Null
             }
             catch { }
         }
         else {
             $failedTenants++
+            Write-Host "❌ Verbinding mislukt voor $customerName" -ForegroundColor Red
             Write-Error "Overslaan van $customerName vanwege verbindingsfouten"
         }
     }
@@ -2270,6 +2357,11 @@ function Main {
             }
         }
     }
+    Write-Host ""
+    Write-Host "=== Data Verzameling Voltooid ===" -ForegroundColor Green
+    Write-Host "✓ Totaal aantal records: $($allResults.Count)" -ForegroundColor Green
+    Write-Host "✓ Successvolle tenants: $successfulTenants van $($credentials.Count)" -ForegroundColor Green
+    Write-Host "✓ Mislukte tenants: $failedTenants van $($credentials.Count)" -ForegroundColor $(if ($failedTenants -gt 0) { "Yellow" } else { "Green" })
     
     # Backup functionaliteit voor normale mode
     if ($config.BackupSettings.EnableBackup -eq $true) {

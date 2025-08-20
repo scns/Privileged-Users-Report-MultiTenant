@@ -1009,9 +1009,27 @@ function New-HTMLDashboard {
             </div>
         </div>
         
+        <div style="margin: 20px 0; background: #f8f9fa; padding: 15px; border-radius: 8px;">
+            <h4 style="margin: 0 0 15px 0; color: #495057;"><i class="fa-solid fa-filter"></i> Filter Opties</h4>
+            <div class="filter-buttons">
+                <button class="filter-btn active" onclick="filterChangesTable('all')">
+                    <i class="fa-solid fa-list"></i> Alle Wijzigingen ($(($Changes | Measure-Object).Count))
+                </button>
+                <button class="filter-btn changes-new" onclick="filterChangesTable('new')">
+                    <i class="fa-solid fa-plus-circle"></i> Nieuwe ($(($Changes | Where-Object { $_.ChangeType -eq "NEW" }).Count))
+                </button>
+                <button class="filter-btn changes-removed" onclick="filterChangesTable('removed')">
+                    <i class="fa-solid fa-minus-circle"></i> Verwijderd ($(($Changes | Where-Object { $_.ChangeType -eq "REMOVED" }).Count))
+                </button>
+                <button class="filter-btn changes-modified" onclick="filterChangesTable('modified')">
+                    <i class="fa-solid fa-edit"></i> Gewijzigd ($(($Changes | Where-Object { $_.ChangeType -eq "MODIFIED" }).Count))
+                </button>
+            </div>
+        </div>
+        
         $noChangesMessage
         
-        <h4>Alle Wijzigingen</h4>
+        <h4>Wijzigingen Overzicht <span id="changesFilterLabel" style="color: #6c757d; font-weight: normal;">(Alle wijzigingen)</span></h4>
         <table id="changesTable" class="display" style="width:100%">
             <thead>
                 <tr>
@@ -1291,6 +1309,42 @@ function New-HTMLDashboard {
                     break;
             }
         }
+        
+        // Filter functionaliteit voor wijzigingen tabel
+        function filterChangesTable(filterType) {
+            var table = $('#changesTable').DataTable();
+            var label = document.getElementById('changesFilterLabel');
+            
+            // Update active button
+            var filterButtons = document.querySelectorAll('#Changes .filter-btn');
+            filterButtons.forEach(function(btn) {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Clear all existing searches first
+            table.search('').columns().search('').draw();
+            
+            // Apply filter and update label
+            switch(filterType) {
+                case 'all':
+                    // Show all rows - already cleared above
+                    label.textContent = '(Alle wijzigingen)';
+                    break;
+                case 'new':
+                    table.column(0).search('NEW', false, false).draw();
+                    label.textContent = '(Nieuwe toewijzingen)';
+                    break;
+                case 'removed':
+                    table.column(0).search('REMOVED', false, false).draw();
+                    label.textContent = '(Verwijderde toewijzingen)';
+                    break;
+                case 'modified':
+                    table.column(0).search('MODIFIED', false, false).draw();
+                    label.textContent = '(Gewijzigde toewijzingen)';
+                    break;
+            }
+        }
 '@
         
         $lastRunDate = Get-Date -Format "dd-MM-yyyy HH:mm"
@@ -1422,6 +1476,14 @@ function New-HTMLDashboard {
     .filter-btn.global-admin { border-color: #ffc107; color: #e68900; }
     .filter-btn.global-admin:hover, .filter-btn.global-admin.active { background: #ffc107; color: #212529; }
     
+    /* Changes filter buttons */
+    .filter-btn.changes-new { border-color: #28a745; color: #28a745; }
+    .filter-btn.changes-new:hover, .filter-btn.changes-new.active { background: #28a745; color: white; }
+    .filter-btn.changes-removed { border-color: #dc3545; color: #dc3545; }
+    .filter-btn.changes-removed:hover, .filter-btn.changes-removed.active { background: #dc3545; color: white; }
+    .filter-btn.changes-modified { border-color: #ffc107; color: #e68900; }
+    .filter-btn.changes-modified:hover, .filter-btn.changes-modified.active { background: #ffc107; color: #212529; }
+    
     /* Tables */
     table.dataTable { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     table.dataTable thead th { background: #f8f9fa; color: #495057; font-weight: 600; padding: 12px; border-bottom: 2px solid #dee2e6; }
@@ -1472,6 +1534,14 @@ function New-HTMLDashboard {
     body.darkmode .filter-btn.permanent:hover, body.darkmode .filter-btn.permanent.active { background: #ff4d4d; color: #121212; }
     body.darkmode .filter-btn.global-admin { border-color: #ffcc4d; color: #ffcc4d; }
     body.darkmode .filter-btn.global-admin:hover, body.darkmode .filter-btn.global-admin.active { background: #ffcc4d; color: #121212; }
+    
+    /* Dark mode changes filter buttons */
+    body.darkmode .filter-btn.changes-new { border-color: #4dff4d; color: #4dff4d; }
+    body.darkmode .filter-btn.changes-new:hover, body.darkmode .filter-btn.changes-new.active { background: #4dff4d; color: #121212; }
+    body.darkmode .filter-btn.changes-removed { border-color: #ff4d4d; color: #ff4d4d; }
+    body.darkmode .filter-btn.changes-removed:hover, body.darkmode .filter-btn.changes-removed.active { background: #ff4d4d; color: #121212; }
+    body.darkmode .filter-btn.changes-modified { border-color: #ffcc4d; color: #ffcc4d; }
+    body.darkmode .filter-btn.changes-modified:hover, body.darkmode .filter-btn.changes-modified.active { background: #ffcc4d; color: #121212; }
     
     /* Button Styling */
     #darkModeToggle { 

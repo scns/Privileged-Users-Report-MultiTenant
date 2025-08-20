@@ -1,5 +1,5 @@
 
-# Bijdragen aan Windows-Update-Report-MultiTenant
+# Bijdragen aan Privileged-Users-Report-MultiTenant
 
 Bedankt voor je interesse in bijdragen! Dit document legt uit hoe je kunt bijdragen en welke richtlijnen gelden.
 

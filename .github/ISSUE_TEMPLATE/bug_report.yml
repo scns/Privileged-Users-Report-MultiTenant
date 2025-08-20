@@ -1,12 +1,12 @@
 name: "Bug report"
-description: "Create a bug report to help us improve the myESPhome Project!"
+description: "Create a bug report to help us improve the Privileged Users Report Project!"
 labels: ["bug", "question", "triage:not-checked"]
 body:
   - type: checkboxes
     id: no-duplicate-issues
     attributes:
       label: "Please verify that this bug has NOT been raised before."
-      description: "Search in the issues sections by clicking [HERE](https://github.com/scns/Windows-Update-Report-MultiTenant/issues?q=) and read the [Discussions](https://github.com/scns/Windows-Update-Report-MultiTenant/discussions)!"
+      description: "Search in the issues sections by clicking [HERE](https://github.com/scns/Privileged-Users-Report-MultiTenant/issues?q=) and read the [Discussions](https://github.com/scns/Privileged-Users-Report-MultiTenant/discussions)!"
       options:
         - label: "I checked and didn't find a similar issue"
           required: true

@@ -1,7 +1,28 @@
 {
-    "exportRetentionCount": 40,
-    "cleanupOldExports": true,
-    "exportDirectory": "exports",
-    "archiveDirectory": "archive",
-    "autoOpenHtmlReport": true
+    "ExportSettings": {
+        "OutputFolder": "exports",
+        "CreateDateSubfolders": false,
+        "ArchiveOldReports": true,
+        "MaxReportsToKeep": 10
+    },
+    "ReportSettings": {
+        "IncludeTimestamp": false,
+        "FileEncoding": "UTF8",
+        "DateFormat": "yyyyMMdd",
+        "IncludeServicePrincipals": true
+    },
+    "HTMLSettings": {
+        "GenerateHTMLDashboard": true,
+        "AutoOpenHTMLReport": true
+    },
+    "BackupSettings": {
+        "EnableBackup": true,
+        "BackupRoot": "backups",
+        "ExportBackupSubfolder": "exports",
+        "ConfigBackupSubfolder": "config",
+        "EnableExportBackup": true,
+        "EnableConfigBackup": true,
+        "ExportBackupRetention": 5,
+        "ConfigBackupRetention": 3
+    }
 }

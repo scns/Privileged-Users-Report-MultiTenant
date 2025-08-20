@@ -228,6 +228,26 @@ function Connect-MicrosoftGraph {
         Connect-MgGraph -ClientSecretCredential $credential -TenantId $TenantId -NoWelcome
         
         Write-Host "✓ Succesvol verbonden met Microsoft Graph" -ForegroundColor Green
+        
+        # Check Graph API permissions voor sign-in data
+        Write-Host "→ Controleren Graph API permissies..." -ForegroundColor Cyan
+        try {
+            # Test of we toegang hebben tot audit logs
+            Get-MgAuditLogSignIn -Top 1 -ErrorAction Stop | Out-Null
+            Write-Host "✓ AuditLog.Read.All permissie beschikbaar" -ForegroundColor Green
+        }
+        catch {
+            $errorMessage = $_.Exception.Message
+            if ($errorMessage -like "*AuditLog.Read.All*" -or $errorMessage -like "*Authentication_MSGraphPermissionMissing*") {
+                Write-Host "❌ AuditLog.Read.All permissie ontbreekt in App Registration" -ForegroundColor Red
+                Write-Host "   → Ga naar Azure Portal → App registrations → [Your App] → API permissions" -ForegroundColor Yellow
+                Write-Host "   → Voeg toe: AuditLog.Read.All (Application permission)" -ForegroundColor Yellow
+                Write-Host "   → Vergeet niet: Grant admin consent!" -ForegroundColor Yellow
+            } else {
+                Write-Host "⚠ AuditLog.Read.All permissie controle gefaald - Sign-in data beperkt beschikbaar" -ForegroundColor Yellow
+            }
+        }
+        
         return $true
     }
     catch {
@@ -339,19 +359,53 @@ function Get-PrincipalInfo {
             # Probeer sign-in activity apart op te halen (dit kan falen door beperkte rechten)
             try {
                 Write-Host "          → Ophalen sign-in activity..." -ForegroundColor DarkGray
+                
+                # Methode 1: Probeer SignInActivity property
                 $signInActivity = Get-MgUser -UserId $PrincipalId -Property "SignInActivity" -ErrorAction Stop
                 if ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastSignInDateTime) {
                     $result.LastLoginDate = $signInActivity.SignInActivity.LastSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    Write-Host "          → ✓ Interactive sign-in gevonden" -ForegroundColor DarkGreen
                 } elseif ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime) {
                     $result.LastLoginDate = $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                    Write-Host "          → ✓ Non-interactive sign-in gevonden" -ForegroundColor DarkGreen
                 } else {
-                    $result.LastLoginDate = "Never"
+                    # Methode 2: Probeer via Audit Logs (alternatief)
+                    try {
+                        Write-Host "          → Proberen via audit logs..." -ForegroundColor DarkGray
+                        $auditLogs = Get-MgAuditLogSignIn -Filter "userId eq '$PrincipalId'" -Top 1 -Sort "createdDateTime desc" -ErrorAction Stop
+                        if ($auditLogs -and $auditLogs.Count -gt 0) {
+                            $result.LastLoginDate = $auditLogs[0].CreatedDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                            Write-Host "          → ✓ Sign-in via audit logs gevonden" -ForegroundColor DarkGreen
+                        } else {
+                            $result.LastLoginDate = "Never"
+                            Write-Host "          → Geen sign-in records gevonden" -ForegroundColor Yellow
+                        }
+                    }
+                    catch {
+                        $result.LastLoginDate = "No Access"
+                        Write-Host "          → ⚠ Audit logs niet toegankelijk: $($_.Exception.Message)" -ForegroundColor Yellow
+                    }
                 }
             }
             catch {
-                # Als sign-in activity niet kan worden opgehaald, gebruik "N/A"
-                Write-Host "          → Sign-in activity niet beschikbaar" -ForegroundColor DarkGray
-                $result.LastLoginDate = "N/A"
+                # Als alle methoden falen, probeer de fout te analyseren
+                $errorMessage = $_.Exception.Message
+                if ($errorMessage -like "*AuditLog.Read.All*" -or $errorMessage -like "*Authentication_MSGraphPermissionMissing*") {
+                    $result.LastLoginDate = "Missing AuditLog.Read.All"
+                    Write-Host "          → ⚠ App Registration mist AuditLog.Read.All permissie" -ForegroundColor Yellow
+                } elseif ($errorMessage -like "*Insufficient privileges*" -or $errorMessage -like "*Forbidden*") {
+                    $result.LastLoginDate = "Insufficient Rights"
+                    Write-Host "          → ⚠ Onvoldoende rechten voor sign-in data" -ForegroundColor Yellow
+                } elseif ($errorMessage -like "*not found*") {
+                    $result.LastLoginDate = "User Not Found"
+                    Write-Host "          → ⚠ Gebruiker niet gevonden" -ForegroundColor Yellow
+                } elseif ($errorMessage -like "*Premium*" -or $errorMessage -like "*license*") {
+                    $result.LastLoginDate = "License Required"
+                    Write-Host "          → ⚠ Entra ID Premium licentie vereist" -ForegroundColor Yellow
+                } else {
+                    $result.LastLoginDate = "Error"
+                    Write-Host "          → ⚠ Fout bij ophalen sign-in data: $errorMessage" -ForegroundColor Yellow
+                }
             }
             
             return $result
@@ -2362,6 +2416,30 @@ function Main {
     Write-Host "✓ Totaal aantal records: $($allResults.Count)" -ForegroundColor Green
     Write-Host "✓ Successvolle tenants: $successfulTenants van $($credentials.Count)" -ForegroundColor Green
     Write-Host "✓ Mislukte tenants: $failedTenants van $($credentials.Count)" -ForegroundColor $(if ($failedTenants -gt 0) { "Yellow" } else { "Green" })
+    
+    # Sign-in data samenvatting
+    if ($allResults.Count -gt 0) {
+        $usersWithSignIn = ($allResults | Where-Object { $_.UserType -eq "User" -and $_.LastLoginDate -notmatch "N/A|Never|Error|No Access|Insufficient Rights|User Not Found" }).Count
+        $totalUsers = ($allResults | Where-Object { $_.UserType -eq "User" }).Count
+        $signInPercentage = if ($totalUsers -gt 0) { [Math]::Round(($usersWithSignIn / $totalUsers * 100), 1) } else { 0 }
+        
+        Write-Host ""
+        Write-Host "=== Sign-in Data Samenvatting ===" -ForegroundColor Cyan
+        Write-Host "✓ Gebruikers met sign-in data: $usersWithSignIn van $totalUsers ($signInPercentage%)" -ForegroundColor Green
+        Write-Host "✓ Gebruikers zonder sign-in data: $($totalUsers - $usersWithSignIn) van $totalUsers" -ForegroundColor Yellow
+        
+        # Toon verdeling van sign-in statussen
+        $signInStatuses = $allResults | Where-Object { $_.UserType -eq "User" } | Group-Object LastLoginDate | Sort-Object Count -Descending
+        $topStatuses = $signInStatuses | Select-Object -First 5
+        Write-Host "→ Top sign-in statussen:" -ForegroundColor Cyan
+        foreach ($status in $topStatuses) {
+            if ($status.Name -match "N/A|Never|Error|No Access|Insufficient Rights|User Not Found") {
+                Write-Host "   • $($status.Name): $($status.Count) gebruikers" -ForegroundColor Yellow
+            } else {
+                Write-Host "   • $($status.Name): $($status.Count) gebruikers" -ForegroundColor Green
+            }
+        }
+    }
     
     # Backup functionaliteit voor normale mode
     if ($config.BackupSettings.EnableBackup -eq $true) {

@@ -356,55 +356,48 @@ function Get-PrincipalInfo {
             $result.JobTitle = $userDetails.JobTitle
             $result.CompanyName = $userDetails.CompanyName
             
-            # Probeer sign-in activity apart op te halen (dit kan falen door beperkte rechten)
+            # Probeer sign-in data op te halen via user properties (snelle methode)
             try {
-                Write-Host "          → Ophalen sign-in activity..." -ForegroundColor DarkGray
+                Write-Host "          → Ophalen sign-in data via user properties..." -ForegroundColor DarkGray
                 
-                # Methode 1: Probeer SignInActivity property
-                $signInActivity = Get-MgUser -UserId $PrincipalId -Property "SignInActivity" -ErrorAction Stop
-                if ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastSignInDateTime) {
-                    $result.LastLoginDate = $signInActivity.SignInActivity.LastSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
-                    Write-Host "          → ✓ Interactive sign-in gevonden" -ForegroundColor DarkGreen
-                } elseif ($signInActivity.SignInActivity -and $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime) {
-                    $result.LastLoginDate = $signInActivity.SignInActivity.LastNonInteractiveSignInDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+                # Haal user op met alle relevante sign-in properties in één call
+                $userWithSignIn = Get-MgUser -UserId $PrincipalId -Property "lastSignInDateTime,signInActivity" -ErrorAction SilentlyContinue
+                
+                $lastSignIn = $null
+                
+                # Prioriteit: 1. LastSignInDateTime (meest recente), 2. SignInActivity
+                if ($userWithSignIn.LastSignInDateTime) {
+                    $lastSignIn = $userWithSignIn.LastSignInDateTime
+                    Write-Host "          → ✓ LastSignInDateTime gevonden" -ForegroundColor DarkGreen
+                } 
+                elseif ($userWithSignIn.SignInActivity -and $userWithSignIn.SignInActivity.LastSignInDateTime) {
+                    $lastSignIn = $userWithSignIn.SignInActivity.LastSignInDateTime
+                    Write-Host "          → ✓ SignInActivity.LastSignInDateTime gevonden" -ForegroundColor DarkGreen
+                }
+                elseif ($userWithSignIn.SignInActivity -and $userWithSignIn.SignInActivity.LastNonInteractiveSignInDateTime) {
+                    $lastSignIn = $userWithSignIn.SignInActivity.LastNonInteractiveSignInDateTime
                     Write-Host "          → ✓ Non-interactive sign-in gevonden" -ForegroundColor DarkGreen
+                }
+                
+                if ($lastSignIn) {
+                    $result.LastLoginDate = $lastSignIn.ToString("yyyy-MM-dd HH:mm:ss")
                 } else {
-                    # Methode 2: Probeer via Audit Logs (alternatief)
-                    try {
-                        Write-Host "          → Proberen via audit logs..." -ForegroundColor DarkGray
-                        $auditLogs = Get-MgAuditLogSignIn -Filter "userId eq '$PrincipalId'" -Top 1 -Sort "createdDateTime desc" -ErrorAction Stop
-                        if ($auditLogs -and $auditLogs.Count -gt 0) {
-                            $result.LastLoginDate = $auditLogs[0].CreatedDateTime.ToString("yyyy-MM-dd HH:mm:ss")
-                            Write-Host "          → ✓ Sign-in via audit logs gevonden" -ForegroundColor DarkGreen
-                        } else {
-                            $result.LastLoginDate = "Never"
-                            Write-Host "          → Geen sign-in records gevonden" -ForegroundColor Yellow
-                        }
-                    }
-                    catch {
-                        $result.LastLoginDate = "No Access"
-                        Write-Host "          → ⚠ Audit logs niet toegankelijk: $($_.Exception.Message)" -ForegroundColor Yellow
-                    }
+                    $result.LastLoginDate = "Never"
+                    Write-Host "          → Geen sign-in data beschikbaar" -ForegroundColor Yellow
                 }
             }
             catch {
-                # Als alle methoden falen, probeer de fout te analyseren
+                # Eenvoudige error handling zonder complexe audit log fallback
                 $errorMessage = $_.Exception.Message
-                if ($errorMessage -like "*AuditLog.Read.All*" -or $errorMessage -like "*Authentication_MSGraphPermissionMissing*") {
-                    $result.LastLoginDate = "Missing AuditLog.Read.All"
-                    Write-Host "          → ⚠ App Registration mist AuditLog.Read.All permissie" -ForegroundColor Yellow
+                if ($errorMessage -like "*Property*lastSignInDateTime*not supported*" -or $errorMessage -like "*signInActivity*") {
+                    $result.LastLoginDate = "Not Supported"
+                    Write-Host "          → ⚠ Sign-in properties niet ondersteund" -ForegroundColor Yellow
                 } elseif ($errorMessage -like "*Insufficient privileges*" -or $errorMessage -like "*Forbidden*") {
                     $result.LastLoginDate = "Insufficient Rights"
                     Write-Host "          → ⚠ Onvoldoende rechten voor sign-in data" -ForegroundColor Yellow
-                } elseif ($errorMessage -like "*not found*") {
-                    $result.LastLoginDate = "User Not Found"
-                    Write-Host "          → ⚠ Gebruiker niet gevonden" -ForegroundColor Yellow
-                } elseif ($errorMessage -like "*Premium*" -or $errorMessage -like "*license*") {
-                    $result.LastLoginDate = "License Required"
-                    Write-Host "          → ⚠ Entra ID Premium licentie vereist" -ForegroundColor Yellow
                 } else {
                     $result.LastLoginDate = "Error"
-                    Write-Host "          → ⚠ Fout bij ophalen sign-in data: $errorMessage" -ForegroundColor Yellow
+                    Write-Host "          → ⚠ Fout bij ophalen sign-in data: $($errorMessage.Substring(0, [Math]::Min(100, $errorMessage.Length)))" -ForegroundColor Yellow
                 }
             }
             
